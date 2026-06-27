@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from "react";
+import React, { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { RefreshCw, Database, Activity, Trophy } from "lucide-react";
 import { fetchPrediction, fetchRatings, ingestHistory } from "./api";
@@ -189,4 +189,3 @@ createRoot(document.getElementById("root")).render(
     <App />
   </StrictMode>,
 );
-
