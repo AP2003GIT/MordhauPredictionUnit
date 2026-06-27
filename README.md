@@ -23,6 +23,26 @@ docker-compose.yml     Local microservice runtime
 
 ## Local Quick Start
 
+### One-Click Windows Start
+
+Double-click:
+
+```text
+Start-MordhauPredictionUnit.bat
+```
+
+It creates missing Python virtual environments, installs dependencies, builds the dashboard, starts both APIs, syncs Needys match/player data, serves the dashboard, and opens `http://127.0.0.1:5173`.
+
+To stop everything, double-click:
+
+```text
+Stop-MordhauPredictionUnit.bat
+```
+
+Logs are written to `.runtime/logs`.
+
+### Manual Start
+
 Run each service in its own terminal.
 
 Requires Python 3.12+ and Node.js 20+. If `python` is not available in your terminal, install Python and enable the PATH option during installation.
