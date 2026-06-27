@@ -9,8 +9,10 @@ from .storage import (
     database_stats,
     init_db,
     load_history_matches,
+    load_players,
     save_scoreboard_snapshot,
     upsert_matches,
+    upsert_players,
 )
 
 
@@ -41,14 +43,37 @@ def ingest_history(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str
     client = NeedysClient()
     try:
         matches = client.recent_matches(limit=limit)
+        players = client.most_active_players(limit=limit)
     except NeedysApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     with connect() as connection:
         stored = upsert_matches(connection, matches)
+        players_stored = upsert_players(connection, players)
         stats = database_stats(connection)
 
-    return {"fetched": len(matches), "stored": stored, **stats}
+    return {
+        "fetched": len(matches),
+        "stored": stored,
+        "playersFetched": len(players),
+        "playersStored": players_stored,
+        **stats,
+    }
+
+
+@app.post("/ingest/players")
+def ingest_players(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str, int]:
+    client = NeedysClient()
+    try:
+        players = client.most_active_players(limit=limit)
+    except NeedysApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    with connect() as connection:
+        stored = upsert_players(connection, players)
+        stats = database_stats(connection)
+
+    return {"fetched": len(players), "stored": stored, **stats}
 
 
 @app.get("/scoreboard/current")
@@ -83,8 +108,14 @@ def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
     return {"matches": matches, "count": len(matches)}
 
 
+@app.get("/players/all")
+def all_players(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
+    with connect() as connection:
+        players = load_players(connection, limit=limit)
+    return {"players": players, "count": len(players)}
+
+
 @app.get("/stats/database")
 def stats() -> dict[str, int]:
     with connect() as connection:
         return database_stats(connection)
-

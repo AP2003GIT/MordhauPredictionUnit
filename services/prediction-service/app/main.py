@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+import math
 
 from .data_client import DataServiceClient, DataServiceError
 from .predictor import predict_current_match
@@ -53,21 +54,31 @@ def predict_current(history_limit: int = Query(default=9999, ge=1, le=20000)) ->
 
 
 @app.get("/ratings")
-def ratings(limit: int = Query(default=50, ge=1, le=500)) -> dict:
+def ratings(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
     client = DataServiceClient()
     try:
         history = client.get_json("/matches/history", {"limit": 20000, "order": "asc"})
+        known_players = client.get_json("/players/all", {"limit": 20000})
     except DataServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     matches = history.get("matches", [])
     player_ratings = build_player_ratings(matches if isinstance(matches, list) else [])
-    sorted_ratings = sorted(
-        player_ratings.values(),
-        key=lambda player: (player.display_rating, player.matches),
+    players = merge_player_ratings(
+        player_ratings,
+        known_players.get("players", []) if isinstance(known_players, dict) else [],
+    )
+    sorted_players = sorted(
+        players,
+        key=lambda player: (player["displayRating"], player["matches"]),
         reverse=True,
     )
-    return {"players": [player.as_dict() for player in sorted_ratings[:limit]]}
+    returned_players = sorted_players[:limit]
+    return {
+        "players": returned_players,
+        "count": len(sorted_players),
+        "returned": len(returned_players),
+    }
 
 
 @app.get("/matches/recent")
@@ -78,3 +89,78 @@ def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
     except DataServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+
+def merge_player_ratings(player_ratings: dict, known_players: list) -> list[dict]:
+    merged = {fabid: rating.as_dict() for fabid, rating in player_ratings.items()}
+
+    for player in known_players:
+        if not isinstance(player, dict):
+            continue
+        fabid = str(player.get("fabid") or "").strip()
+        if not fabid:
+            continue
+
+        aggregate = aggregate_player_rating(player)
+        if fabid in merged:
+            merged[fabid] = {
+                **merged[fabid],
+                "aggregateMatches": aggregate["matches"],
+                "aggregateKills": aggregate["kills"],
+                "aggregateDeaths": aggregate["deaths"],
+                "aggregateAssists": aggregate["assists"],
+                "steamAvatar": player.get("steamAvatar"),
+                "ratingSource": "match-history",
+            }
+        else:
+            merged[fabid] = aggregate
+
+    return list(merged.values())
+
+
+def aggregate_player_rating(player: dict) -> dict:
+    matches = to_int(player.get("matchesPlayed"))
+    kills = to_int(player.get("totalKills"))
+    deaths = to_int(player.get("totalDeaths"))
+    assists = to_int(player.get("totalAssists"))
+    kd = to_float(player.get("kd"))
+    kda = (kills + 0.35 * assists) / max(1, deaths)
+
+    experience_bonus = min(50.0, math.log1p(matches) * 8.0)
+    impact_bonus = min(80.0, max(-70.0, (kda - 1.0) * 30.0))
+    display_rating = 1000.0 + experience_bonus + impact_bonus
+
+    return {
+        "fabid": str(player.get("fabid") or ""),
+        "name": player.get("steamUsername") or "Unknown",
+        "rating": 1000.0,
+        "displayRating": round(display_rating, 1),
+        "matches": matches,
+        "wins": 0,
+        "winRate": 0.0,
+        "kills": kills,
+        "deaths": deaths,
+        "assists": assists,
+        "kd": round(kd, 3),
+        "kda": round(kda, 3),
+        "avgAdr": 0.0,
+        "steamAvatar": player.get("steamAvatar"),
+        "ratingSource": "aggregate-stats",
+    }
+
+
+def to_int(value) -> int:
+    if value is None or value == "":
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def to_float(value) -> float:
+    if value is None or value == "":
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0

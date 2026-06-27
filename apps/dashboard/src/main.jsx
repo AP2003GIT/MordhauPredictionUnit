@@ -17,7 +17,7 @@ function App() {
     try {
       const [predictionData, ratingsData] = await Promise.all([
         fetchPrediction(),
-        fetchRatings(20),
+        fetchRatings(),
       ]);
       setPrediction(predictionData);
       setRatings(ratingsData.players || []);
@@ -105,8 +105,8 @@ function App() {
 
       <section className="leaderboard">
         <div className="section-heading">
-          <h2>Top player ratings</h2>
-          <span>{ratings.length} loaded</span>
+          <h2>All player ratings</h2>
+          <span>{ratings.length} players loaded</span>
         </div>
         <div className="rating-table">
           {ratings.map((player, index) => (

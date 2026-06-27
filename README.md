@@ -87,6 +87,7 @@ Data service on `:8001`:
 - `GET /scoreboard/current`
 - `GET /matches/history?limit=9999&order=asc`
 - `GET /matches/recent?limit=20`
+- `GET /players/all?limit=20000`
 - `GET /stats/database`
 
 Prediction service on `:8002`:
@@ -94,7 +95,7 @@ Prediction service on `:8002`:
 - `GET /health`
 - `POST /ingest/history?limit=9999`
 - `GET /predict/current`
-- `GET /ratings?limit=50`
+- `GET /ratings?limit=20000`
 - `GET /matches/recent?limit=20`
 
 ## Verification

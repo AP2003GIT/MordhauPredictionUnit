@@ -39,6 +39,20 @@ CREATE TABLE IF NOT EXISTS player_matches (
     FOREIGN KEY (match_key) REFERENCES matches(match_key)
 );
 
+CREATE TABLE IF NOT EXISTS players (
+    fabid TEXT PRIMARY KEY,
+    steam_username TEXT,
+    steam_avatar TEXT,
+    matches_played INTEGER DEFAULT 0,
+    total_kills INTEGER DEFAULT 0,
+    total_deaths INTEGER DEFAULT 0,
+    total_assists INTEGER DEFAULT 0,
+    kd REAL DEFAULT 0,
+    playtime_hours REAL DEFAULT 0,
+    last_match_time TEXT,
+    raw_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS scoreboard_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     captured_at TEXT,
@@ -193,6 +207,55 @@ def save_scoreboard_snapshot(connection: sqlite3.Connection, payload: dict[str, 
     connection.commit()
 
 
+def upsert_players(connection: sqlite3.Connection, players: Iterable[dict[str, Any]]) -> int:
+    init_db(connection)
+    inserted_or_updated = 0
+
+    for player in players:
+        fabid = str(player.get("fabid") or "").strip()
+        if not fabid:
+            continue
+
+        connection.execute(
+            """
+            INSERT INTO players (
+                fabid, steam_username, steam_avatar, matches_played,
+                total_kills, total_deaths, total_assists, kd,
+                playtime_hours, last_match_time, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fabid) DO UPDATE SET
+                steam_username = excluded.steam_username,
+                steam_avatar = excluded.steam_avatar,
+                matches_played = excluded.matches_played,
+                total_kills = excluded.total_kills,
+                total_deaths = excluded.total_deaths,
+                total_assists = excluded.total_assists,
+                kd = excluded.kd,
+                playtime_hours = excluded.playtime_hours,
+                last_match_time = excluded.last_match_time,
+                raw_json = excluded.raw_json
+            """,
+            (
+                fabid,
+                player.get("steamUsername"),
+                player.get("steamAvatar"),
+                _to_int(player.get("matchesPlayed"), default=0),
+                _to_int(player.get("totalKills"), default=0),
+                _to_int(player.get("totalDeaths"), default=0),
+                _to_int(player.get("totalAssists"), default=0),
+                _to_float(player.get("kd"), default=0.0),
+                _to_float(player.get("playtimeHours"), default=0.0),
+                player.get("lastMatchTime"),
+                json.dumps(player, separators=(",", ":")),
+            ),
+        )
+        inserted_or_updated += 1
+
+    connection.commit()
+    return inserted_or_updated
+
+
 def load_history_matches(
     connection: sqlite3.Connection,
     limit: int = 9999,
@@ -213,18 +276,34 @@ def load_history_matches(
     return [json.loads(row["raw_json"]) for row in rows]
 
 
+def load_players(connection: sqlite3.Connection, limit: int = 20000) -> list[dict[str, Any]]:
+    init_db(connection)
+    rows = connection.execute(
+        """
+        SELECT raw_json
+        FROM players
+        ORDER BY matches_played DESC, steam_username ASC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    return [json.loads(row["raw_json"]) for row in rows]
+
+
 def database_stats(connection: sqlite3.Connection) -> dict[str, int]:
     init_db(connection)
     match_count = connection.execute("SELECT COUNT(*) AS count FROM matches").fetchone()["count"]
     player_match_count = connection.execute(
         "SELECT COUNT(*) AS count FROM player_matches"
     ).fetchone()["count"]
+    player_count = connection.execute("SELECT COUNT(*) AS count FROM players").fetchone()["count"]
     snapshot_count = connection.execute(
         "SELECT COUNT(*) AS count FROM scoreboard_snapshots"
     ).fetchone()["count"]
     return {
         "matches": int(match_count),
         "playerMatches": int(player_match_count),
+        "players": int(player_count),
         "scoreboardSnapshots": int(snapshot_count),
     }
 
@@ -237,3 +316,11 @@ def _to_int(value: Any, default: int | None = None) -> int | None:
     except (TypeError, ValueError):
         return default
 
+
+def _to_float(value: Any, default: float | None = None) -> float | None:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

@@ -50,6 +50,10 @@ class NeedysClient:
         matches = payload.get("matches", [])
         return matches if isinstance(matches, list) else []
 
+    def most_active_players(self, limit: int = 9999) -> list[dict[str, Any]]:
+        payload = self.get_json("/api/players/most-active", {"limit": limit})
+        players = payload.get("players", [])
+        return players if isinstance(players, list) else []
+
     def dashboard_scoreboard(self) -> dict[str, Any]:
         return self.get_json("/api/dashboard/scoreboard")
-
