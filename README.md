@@ -115,8 +115,11 @@ Prediction service on `:8002`:
 - `GET /health`
 - `POST /ingest/history?limit=9999`
 - `GET /predict/current`
+- `GET /predict/random?team_size=5`
 - `GET /ratings?limit=20000`
 - `GET /matches/recent?limit=20`
+- `POST /model/train`
+- `GET /model/status`
 
 ## Verification
 
@@ -131,22 +134,37 @@ cd services/prediction-service
 ```
 
 ```bash
+cd services/prediction-service
+.venv\Scripts\python.exe scripts\ml_smoke_check.py
+```
+
+```bash
 cd apps/dashboard
 npm run build
 ```
 
-## Model Roadmap
+## Machine Learning
 
-The baseline is intentionally simple and explainable. After collecting live scoreboard snapshots, the next model should train on historical in-match states:
+The baseline remains simple and explainable, but the prediction service now has a first real ML training path. It builds a time-aware dataset from completed matches:
 
 ```text
-features at time T -> eventual winner
+team features before match -> eventual winner
 ```
+
+Training is intentionally leakage-aware: each match row uses ratings and player stats known before that match, then updates player ratings after recording the label.
+
+Train or refresh the saved model:
+
+```bash
+curl -X POST "http://127.0.0.1:8002/model/train"
+```
+
+The trained model is a small JSON logistic regression model stored under `services/prediction-service/data/`, which is ignored by Git. `GET /model/status` returns train/test accuracy, log loss, Brier score, and the strongest learned feature weights.
 
 Good next upgrades:
 
-- time-aware backtesting instead of random train/test split
-- logistic regression or gradient boosting with calibrated probabilities
 - per-map and per-mode player ratings
 - recent form weighting
+- model-vs-baseline backtesting reports
+- stronger models such as gradient boosting once the dataset is larger
 - confidence score based on team sample size and live match progress

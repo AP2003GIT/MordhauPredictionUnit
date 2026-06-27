@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 *.db
+services/prediction-service/data/
 .env
 .env.local
 node_modules/

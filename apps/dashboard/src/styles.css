@@ -54,6 +54,7 @@ select {
 .topbar,
 .prediction-band,
 .meter-shell,
+.model-panel,
 .team-panel,
 .simulation-panel,
 .leaderboard,
@@ -199,6 +200,7 @@ h2 {
 }
 
 .team-panel,
+.model-panel,
 .simulation-panel,
 .leaderboard,
 .empty-state {
@@ -281,6 +283,69 @@ h2 {
 
 .leaderboard {
   margin-top: 18px;
+}
+
+.model-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.model-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  gap: 12px;
+}
+
+.model-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.model-scores {
+  display: grid;
+  gap: 8px;
+}
+
+.model-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 68px;
+  border: 1px solid #2c3741;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #10151a;
+}
+
+.model-score span {
+  color: #9aabba;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.model-score strong {
+  color: #f5f7fa;
+  text-align: right;
+}
+
+.signal-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.signal-strip span {
+  border: 1px solid #33414c;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #151a1f;
+  color: #b8c5d1;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .simulation-panel {
@@ -673,6 +738,11 @@ h2 {
   }
 
   .simulation-teams {
+    grid-template-columns: 1fr;
+  }
+
+  .model-layout,
+  .model-metrics {
     grid-template-columns: 1fr;
   }
 

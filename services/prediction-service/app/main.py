@@ -4,8 +4,17 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import math
 import random
+from typing import Any
 
+from .config import MODEL_PATH
 from .data_client import DataServiceClient, DataServiceError
+from .ml_features import (
+    build_team_feature_differences,
+    build_training_dataset,
+    prediction_teams_to_feature_teams,
+    split_scoreboard_teams,
+)
+from .ml_model import load_model, save_model, train_logistic_model
 from .predictor import predict_current_match
 from .ratings import build_player_ratings
 from .simulation import build_random_match_prediction
@@ -51,6 +60,7 @@ def predict_current(history_limit: int = Query(default=9999, ge=1, le=20000)) ->
     matches = history.get("matches", [])
     ratings = build_player_ratings(matches if isinstance(matches, list) else [])
     prediction = predict_current_match(scoreboard, ratings).as_dict()
+    attach_ml_prediction_from_scoreboard(prediction, scoreboard, ratings)
     prediction["historyMatches"] = len(matches) if isinstance(matches, list) else 0
     return prediction
 
@@ -79,9 +89,43 @@ def predict_random(
     players = load_player_catalog()
     rng = random.Random(seed) if seed is not None else random.SystemRandom()
     try:
-        return build_random_match_prediction(players, team_size=team_size, rng=rng)
+        prediction = build_random_match_prediction(players, team_size=team_size, rng=rng)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    attach_ml_prediction_from_prediction(prediction)
+    return prediction
+
+
+@app.post("/model/train")
+def train_model(history_limit: int = Query(default=20000, ge=10, le=20000)) -> dict:
+    matches = load_history_matches(history_limit)
+    dataset = build_training_dataset(matches)
+    try:
+        model = train_logistic_model(dataset.examples)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    save_model(model, MODEL_PATH)
+    return {
+        "status": "trained",
+        "historyMatches": len(matches),
+        "trainingRows": len(dataset.examples),
+        "skippedMatches": dataset.skipped_matches,
+        "modelPath": str(MODEL_PATH),
+        **model.summary(),
+    }
+
+
+@app.get("/model/status")
+def model_status() -> dict:
+    model = load_model(MODEL_PATH)
+    if not model:
+        return {
+            "available": False,
+            "modelPath": str(MODEL_PATH),
+            "message": "No trained model has been saved yet.",
+        }
+    return {**model.summary(), "modelPath": str(MODEL_PATH)}
 
 
 @app.get("/matches/recent")
@@ -94,9 +138,9 @@ def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
 
 
 def load_player_catalog() -> list[dict]:
+    history = {"matches": load_history_matches(20000)}
     client = DataServiceClient()
     try:
-        history = client.get_json("/matches/history", {"limit": 20000, "order": "asc"})
         known_players = client.get_json("/players/all", {"limit": 20000})
     except DataServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -108,6 +152,66 @@ def load_player_catalog() -> list[dict]:
         known_players.get("players", []) if isinstance(known_players, dict) else [],
     )
     return players
+
+
+def load_history_matches(limit: int) -> list[dict]:
+    client = DataServiceClient()
+    try:
+        history = client.get_json("/matches/history", {"limit": limit, "order": "asc"})
+    except DataServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    matches = history.get("matches", [])
+    return matches if isinstance(matches, list) else []
+
+
+def attach_ml_prediction_from_scoreboard(
+    prediction: dict[str, Any],
+    scoreboard: dict[str, Any],
+    ratings: dict,
+) -> None:
+    raw_players = scoreboard.get("scoreboard", [])
+    if not isinstance(raw_players, list):
+        prediction["mlPrediction"] = {"available": False}
+        return
+
+    teams = split_scoreboard_teams(raw_players)
+    attach_ml_prediction(prediction, teams, ratings)
+
+
+def attach_ml_prediction_from_prediction(prediction: dict[str, Any]) -> None:
+    teams = prediction_teams_to_feature_teams(prediction)
+    attach_ml_prediction(prediction, teams, None)
+
+
+def attach_ml_prediction(
+    prediction: dict[str, Any],
+    teams: dict[int, list[dict[str, Any]]] | None,
+    ratings: dict | None,
+) -> None:
+    model = load_model(MODEL_PATH)
+    if not model:
+        prediction["mlPrediction"] = {"available": False}
+        return
+
+    if not teams:
+        prediction["mlPrediction"] = {
+            "available": False,
+            "reason": "Need players on both teams before ML can score the match.",
+        }
+        return
+
+    features = build_team_feature_differences(teams, ratings)
+    team_zero_probability = model.predict_probability(features)
+    prediction["mlPrediction"] = {
+        "available": True,
+        "source": "trained-history",
+        "modelVersion": model.summary()["version"],
+        "team0Probability": round(team_zero_probability, 4),
+        "team1Probability": round(1.0 - team_zero_probability, 4),
+        "favoredTeam": 0 if team_zero_probability >= 0.5 else 1,
+        "topSignals": model.explain(features),
+    }
 
 
 def merge_player_ratings(player_ratings: dict, known_players: list) -> list[dict]:

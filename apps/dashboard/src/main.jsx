@@ -9,8 +9,16 @@ import {
   SlidersHorizontal,
   UserRound,
   Shuffle,
+  BrainCircuit,
 } from "lucide-react";
-import { fetchPrediction, fetchRandomPrediction, fetchRatings, ingestHistory } from "./api";
+import {
+  fetchModelStatus,
+  fetchPrediction,
+  fetchRandomPrediction,
+  fetchRatings,
+  ingestHistory,
+  trainModel,
+} from "./api";
 import "./styles.css";
 
 const SOURCE_FILTERS = [
@@ -33,8 +41,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [randomLoading, setRandomLoading] = useState(false);
+  const [trainingModel, setTrainingModel] = useState(false);
   const [error, setError] = useState("");
   const [randomPrediction, setRandomPrediction] = useState(null);
+  const [modelStatus, setModelStatus] = useState(null);
   const [playerQuery, setPlayerQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortKey, setSortKey] = useState("displayRating");
@@ -44,12 +54,14 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      const [predictionData, ratingsData] = await Promise.all([
+      const [predictionData, ratingsData, modelStatusData] = await Promise.all([
         fetchPrediction(),
         fetchRatings(),
+        fetchModelStatus(),
       ]);
       setPrediction(predictionData);
       setRatings(ratingsData.players || []);
+      setModelStatus(modelStatusData);
     } catch (err) {
       setError(err.message || "Request failed");
     } finally {
@@ -67,6 +79,20 @@ function App() {
       setError(err.message || "Random prediction failed");
     } finally {
       setRandomLoading(false);
+    }
+  }
+
+  async function handleTrainModel() {
+    setTrainingModel(true);
+    setError("");
+    try {
+      const status = await trainModel();
+      setModelStatus(status);
+      await refresh();
+    } catch (err) {
+      setError(err.message || "Model training failed");
+    } finally {
+      setTrainingModel(false);
     }
   }
 
@@ -162,6 +188,14 @@ function App() {
       </section>
 
       <PredictionMeter prediction={prediction} />
+
+      <ModelPanel
+        modelStatus={modelStatus}
+        training={trainingModel}
+        onTrain={handleTrainModel}
+        prediction={prediction}
+        randomPrediction={randomPrediction}
+      />
 
       <section className="grid-two">
         {(prediction?.teams || []).map((team) => (
@@ -290,6 +324,9 @@ function RandomMatchPanel({ prediction, loading, onGenerate }) {
             <span>Confidence {formatPercent(prediction.confidence || 0)}</span>
             <span>Rating diff {formatDecimal(prediction.signals?.ratingDiff || 0, 1)}</span>
             <span>{prediction.signals?.predictionInput || "rating-only"}</span>
+            {prediction.mlPrediction?.available ? (
+              <span>ML {formatMlProbability(prediction.mlPrediction)}</span>
+            ) : null}
           </div>
           <InlinePredictionMeter prediction={prediction} />
           <div className="simulation-teams">
@@ -305,6 +342,72 @@ function RandomMatchPanel({ prediction, loading, onGenerate }) {
         </div>
       )}
     </section>
+  );
+}
+
+function ModelPanel({ modelStatus, training, onTrain, prediction, randomPrediction }) {
+  const trainMetrics = modelStatus?.metrics?.train;
+  const testMetrics = modelStatus?.metrics?.test;
+
+  return (
+    <section className="model-panel">
+      <div className="section-heading">
+        <div>
+          <p className="label">Machine learning</p>
+          <h2>
+            {modelStatus?.available
+              ? `${formatNumber(modelStatus.trainingExamples)} training matches`
+              : "No trained model yet"}
+          </h2>
+        </div>
+        <button onClick={onTrain} disabled={training}>
+          <BrainCircuit size={18} className={training ? "spin" : ""} />
+          {training ? "Training" : "Train ML"}
+        </button>
+      </div>
+
+      <div className="model-layout">
+        <div className="model-metrics">
+          <StatTile label="Train accuracy" value={formatMetric(trainMetrics?.accuracy)} />
+          <StatTile label="Test accuracy" value={formatMetric(testMetrics?.accuracy)} />
+          <StatTile label="Log loss" value={formatMetric(testMetrics?.logLoss)} />
+          <StatTile label="Brier" value={formatMetric(testMetrics?.brier)} />
+        </div>
+
+        <div className="model-scores">
+          <ModelProbability title="Live match ML" mlPrediction={prediction?.mlPrediction} />
+          <ModelProbability title="Random 5v5 ML" mlPrediction={randomPrediction?.mlPrediction} />
+        </div>
+      </div>
+
+      {modelStatus?.topWeights?.length ? (
+        <div className="signal-strip">
+          {modelStatus.topWeights.map((signal) => (
+            <span key={signal.feature}>
+              {featureLabel(signal.feature)} {formatSigned(signal.weight)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ModelProbability({ title, mlPrediction }) {
+  if (!mlPrediction?.available) {
+    return (
+      <div className="model-score">
+        <span>{title}</span>
+        <strong>Not scored</strong>
+      </div>
+    );
+  }
+
+  return (
+    <div className="model-score">
+      <span>{title}</span>
+      <strong>{formatMlProbability(mlPrediction)}</strong>
+    </div>
   );
 }
 
@@ -513,6 +616,44 @@ function sourceLabel(source) {
   if (source === "match-history") return "Match history";
   if (source === "aggregate-stats") return "Aggregate stats";
   return "Unknown source";
+}
+
+function formatMlProbability(mlPrediction) {
+  const favoredTeam = mlPrediction.favoredTeam === 0 ? "Iron Company" : "Free Guard";
+  const probability =
+    mlPrediction.favoredTeam === 0
+      ? mlPrediction.team0Probability
+      : mlPrediction.team1Probability;
+  return `${favoredTeam} ${formatPercent(probability || 0)}`;
+}
+
+function formatMetric(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return number < 1 ? number.toFixed(3) : number.toFixed(2);
+}
+
+function formatSigned(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${number >= 0 ? "+" : ""}${number.toFixed(3)}`;
+}
+
+function featureLabel(feature) {
+  const labels = {
+    avg_rating_diff: "Avg rating",
+    top_rating_diff: "Top player",
+    weakest_rating_diff: "Weakest player",
+    rating_spread_diff: "Rating spread",
+    avg_matches_diff: "Experience",
+    total_matches_diff: "Total matches",
+    avg_win_rate_diff: "Win rate",
+    avg_kd_diff: "KD",
+    avg_kda_diff: "KDA",
+    avg_adr_diff: "ADR",
+    team_size_diff: "Team size",
+  };
+  return labels[feature] || feature;
 }
 
 function formatNumber(value) {

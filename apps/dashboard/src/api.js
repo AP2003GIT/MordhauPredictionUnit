@@ -17,6 +17,14 @@ export function fetchRandomPrediction(teamSize = 5) {
   return request(`/predict/random?team_size=${teamSize}`);
 }
 
+export function fetchModelStatus() {
+  return request("/model/status");
+}
+
+export function trainModel() {
+  return request("/model/train", { method: "POST" });
+}
+
 export function fetchRatings(limit = ALL_PLAYERS_LIMIT) {
   return request(`/ratings?limit=${limit}`);
 }
