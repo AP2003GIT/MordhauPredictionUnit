@@ -1,8 +1,30 @@
 import React, { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { RefreshCw, Database, Activity, Trophy } from "lucide-react";
+import {
+  RefreshCw,
+  Database,
+  Activity,
+  Trophy,
+  Search,
+  SlidersHorizontal,
+  UserRound,
+} from "lucide-react";
 import { fetchPrediction, fetchRatings, ingestHistory } from "./api";
 import "./styles.css";
+
+const SOURCE_FILTERS = [
+  { value: "all", label: "All sources" },
+  { value: "match-history", label: "Match history" },
+  { value: "aggregate-stats", label: "Aggregate stats" },
+];
+
+const SORT_OPTIONS = [
+  { value: "displayRating", label: "Rating" },
+  { value: "matches", label: "Matches" },
+  { value: "winRate", label: "Win rate" },
+  { value: "kd", label: "KD" },
+  { value: "kills", label: "Kills" },
+];
 
 function App() {
   const [prediction, setPrediction] = useState(null);
@@ -10,6 +32,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [error, setError] = useState("");
+  const [playerQuery, setPlayerQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [sortKey, setSortKey] = useState("displayRating");
+  const [selectedFabid, setSelectedFabid] = useState("");
 
   async function refresh() {
     setLoading(true);
@@ -51,6 +77,32 @@ function App() {
     if (!prediction?.teams?.length) return null;
     return [...prediction.teams].sort((a, b) => b.probability - a.probability)[0];
   }, [prediction]);
+
+  const filteredRatings = useMemo(() => {
+    const query = playerQuery.trim().toLowerCase();
+
+    return [...ratings]
+      .filter((player) => {
+        if (sourceFilter === "all") return true;
+        return player.ratingSource === sourceFilter;
+      })
+      .filter((player) => {
+        if (!query) return true;
+        return [player.name, player.fabid, player.ratingSource].some((value) =>
+          String(value || "").toLowerCase().includes(query),
+        );
+      })
+      .sort((a, b) => {
+        const valueDelta = getPlayerSortValue(b, sortKey) - getPlayerSortValue(a, sortKey);
+        if (valueDelta !== 0) return valueDelta;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+  }, [ratings, playerQuery, sourceFilter, sortKey]);
+
+  const selectedPlayer = useMemo(() => {
+    if (!filteredRatings.length) return null;
+    return filteredRatings.find((player) => player.fabid === selectedFabid) || filteredRatings[0];
+  }, [filteredRatings, selectedFabid]);
 
   return (
     <main className="app-shell">
@@ -104,20 +156,83 @@ function App() {
       </section>
 
       <section className="leaderboard">
-        <div className="section-heading">
-          <h2>All player ratings</h2>
-          <span>{ratings.length} players loaded</span>
+        <div className="section-heading player-browser-heading">
+          <div>
+            <h2>All player ratings</h2>
+            <span>
+              {filteredRatings.length} of {ratings.length} players shown
+            </span>
+          </div>
+          <SlidersHorizontal size={22} />
         </div>
-        <div className="rating-table">
-          {ratings.map((player, index) => (
-            <div className="rating-row" key={player.fabid}>
-              <span className="rank">{index + 1}</span>
-              <span className="player-name">{player.name}</span>
-              <span>{player.displayRating}</span>
-              <span>{player.matches} matches</span>
-              <span>{player.kd} KD</span>
-            </div>
-          ))}
+
+        <div className="player-controls">
+          <label className="search-box">
+            <Search size={18} />
+            <input
+              value={playerQuery}
+              onChange={(event) => setPlayerQuery(event.target.value)}
+              placeholder="Search player, source, or FAB ID"
+            />
+          </label>
+
+          <label className="control-select">
+            <span>Source</span>
+            <select
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+            >
+              {SOURCE_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="control-select">
+            <span>Sort</span>
+            <select value={sortKey} onChange={(event) => setSortKey(event.target.value)}>
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="player-browser">
+          <div className="rating-table" role="list">
+            {filteredRatings.map((player, index) => (
+              <button
+                className={`rating-row ${
+                  player.fabid === selectedPlayer?.fabid ? "is-selected" : ""
+                }`}
+                key={player.fabid}
+                onClick={() => setSelectedFabid(player.fabid)}
+                type="button"
+                aria-pressed={player.fabid === selectedPlayer?.fabid}
+              >
+                <span className="rank">{index + 1}</span>
+                <span className="player-name-block">
+                  <strong className="player-name">{player.name}</strong>
+                  <small>{sourceLabel(player.ratingSource)}</small>
+                </span>
+                <span>{formatNumber(player.displayRating)}</span>
+                <span>{formatNumber(player.matches)} matches</span>
+                <span>{formatDecimal(player.kd)} KD</span>
+              </button>
+            ))}
+            {!filteredRatings.length ? (
+              <div className="empty-list">
+                <Search size={22} />
+                <strong>No players match that view</strong>
+              </div>
+            ) : null}
+          </div>
+
+          <PlayerDetail player={selectedPlayer} />
         </div>
       </section>
     </main>
@@ -178,6 +293,124 @@ function TeamPanel({ team }) {
       </div>
     </section>
   );
+}
+
+function PlayerDetail({ player }) {
+  if (!player) {
+    return (
+      <aside className="player-detail empty-detail">
+        <UserRound size={34} />
+        <h2>No player selected</h2>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="player-detail">
+      <div className="player-detail-header">
+        {player.steamAvatar ? (
+          <img src={player.steamAvatar} alt="" />
+        ) : (
+          <div className="avatar-fallback">
+            <UserRound size={28} />
+          </div>
+        )}
+        <div>
+          <p className="label">{sourceLabel(player.ratingSource)}</p>
+          <h2>{player.name}</h2>
+          <span className="fabid">{player.fabid}</span>
+        </div>
+      </div>
+
+      <div className="hero-stat">
+        <span>Unit rating</span>
+        <strong>{formatNumber(player.displayRating)}</strong>
+      </div>
+
+      <div className="detail-grid">
+        <StatTile label="Matches" value={formatNumber(player.matches)} />
+        <StatTile label="Wins" value={formatNumber(player.wins)} />
+        <StatTile label="Win rate" value={formatPercent(player.winRate || 0)} />
+        <StatTile label="KD" value={formatDecimal(player.kd)} />
+        <StatTile label="KDA" value={formatDecimal(player.kda)} />
+        <StatTile label="Avg ADR" value={formatDecimal(player.avgAdr, 1)} />
+      </div>
+
+      <div className="combat-breakdown">
+        <h3>Combat totals</h3>
+        <div>
+          <span>
+            Kills <strong>{formatNumber(player.kills)}</strong>
+          </span>
+          <span>
+            Deaths <strong>{formatNumber(player.deaths)}</strong>
+          </span>
+          <span>
+            Assists <strong>{formatNumber(player.assists)}</strong>
+          </span>
+        </div>
+      </div>
+
+      <div className="combat-breakdown muted-breakdown">
+        <h3>Aggregate record</h3>
+        <div>
+          <span>
+            Matches <strong>{formatNumber(player.aggregateMatches)}</strong>
+          </span>
+          <span>
+            Kills <strong>{formatNumber(player.aggregateKills)}</strong>
+          </span>
+          <span>
+            Assists <strong>{formatNumber(player.aggregateAssists)}</strong>
+          </span>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function StatTile({ label, value }) {
+  return (
+    <div className="stat-tile">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function getPlayerSortValue(player, key) {
+  const fallbackKeys = {
+    matches: ["matches", "aggregateMatches"],
+    kills: ["kills", "aggregateKills"],
+  };
+  const keys = fallbackKeys[key] || [key];
+
+  for (const candidate of keys) {
+    const value = Number(player[candidate]);
+    if (Number.isFinite(value)) return value;
+  }
+  return Number.NEGATIVE_INFINITY;
+}
+
+function sourceLabel(source) {
+  if (source === "match-history") return "Match history";
+  if (source === "aggregate-stats") return "Aggregate stats";
+  return "Unknown source";
+}
+
+function formatNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return new Intl.NumberFormat().format(number);
+}
+
+function formatDecimal(value, digits = 2) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  }).format(number);
 }
 
 function formatPercent(value) {
