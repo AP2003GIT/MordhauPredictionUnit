@@ -13,6 +13,10 @@ export function fetchPrediction() {
   return request("/predict/current");
 }
 
+export function fetchRandomPrediction(teamSize = 5) {
+  return request(`/predict/random?team_size=${teamSize}`);
+}
+
 export function fetchRatings(limit = ALL_PLAYERS_LIMIT) {
   return request(`/ratings?limit=${limit}`);
 }

@@ -55,6 +55,7 @@ select {
 .prediction-band,
 .meter-shell,
 .team-panel,
+.simulation-panel,
 .leaderboard,
 .empty-state {
   border: 1px solid #323b45;
@@ -198,6 +199,7 @@ h2 {
 }
 
 .team-panel,
+.simulation-panel,
 .leaderboard,
 .empty-state {
   border-radius: 8px;
@@ -279,6 +281,76 @@ h2 {
 
 .leaderboard {
   margin-top: 18px;
+}
+
+.simulation-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.simulation-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #b8c5d1;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.inline-meter {
+  display: grid;
+  gap: 8px;
+}
+
+.simulation-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.simulation-team {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border-top: 1px solid #2f3842;
+  padding-top: 14px;
+}
+
+.simulated-players {
+  display: grid;
+  gap: 8px;
+}
+
+.simulated-player {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px 104px 72px;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid #2f3842;
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: #151a1f;
+  color: #c9d3df;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.simulated-player span:not(.player-name) {
+  color: #9daaba;
+  text-align: right;
+}
+
+.simulation-empty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  gap: 10px;
+  border: 1px dashed #3a4651;
+  border-radius: 8px;
+  color: #a9b7c4;
+  text-align: center;
 }
 
 .player-browser-heading svg {
@@ -598,6 +670,19 @@ h2 {
 
   .grid-two {
     grid-template-columns: 1fr;
+  }
+
+  .simulation-teams {
+    grid-template-columns: 1fr;
+  }
+
+  .simulated-player {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+
+  .simulated-player span:nth-child(3),
+  .simulated-player span:nth-child(4) {
+    display: none;
   }
 
   .player-controls,

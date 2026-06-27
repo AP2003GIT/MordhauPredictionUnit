@@ -8,8 +8,9 @@ import {
   Search,
   SlidersHorizontal,
   UserRound,
+  Shuffle,
 } from "lucide-react";
-import { fetchPrediction, fetchRatings, ingestHistory } from "./api";
+import { fetchPrediction, fetchRandomPrediction, fetchRatings, ingestHistory } from "./api";
 import "./styles.css";
 
 const SOURCE_FILTERS = [
@@ -31,7 +32,9 @@ function App() {
   const [ratings, setRatings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
+  const [randomLoading, setRandomLoading] = useState(false);
   const [error, setError] = useState("");
+  const [randomPrediction, setRandomPrediction] = useState(null);
   const [playerQuery, setPlayerQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortKey, setSortKey] = useState("displayRating");
@@ -51,6 +54,19 @@ function App() {
       setError(err.message || "Request failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRandomPrediction() {
+    setRandomLoading(true);
+    setError("");
+    try {
+      const predictionData = await fetchRandomPrediction();
+      setRandomPrediction(predictionData);
+    } catch (err) {
+      setError(err.message || "Random prediction failed");
+    } finally {
+      setRandomLoading(false);
     }
   }
 
@@ -116,6 +132,10 @@ function App() {
             <Database size={18} />
             {ingesting ? "Ingesting" : "Ingest"}
           </button>
+          <button onClick={handleRandomPrediction} disabled={randomLoading}>
+            <Shuffle size={18} className={randomLoading ? "spin" : ""} />
+            {randomLoading ? "Rolling" : "Random 5v5"}
+          </button>
           <button onClick={refresh} disabled={loading}>
             <RefreshCw size={18} className={loading ? "spin" : ""} />
             Refresh
@@ -154,6 +174,12 @@ function App() {
           </div>
         ) : null}
       </section>
+
+      <RandomMatchPanel
+        prediction={randomPrediction}
+        loading={randomLoading}
+        onGenerate={handleRandomPrediction}
+      />
 
       <section className="leaderboard">
         <div className="section-heading player-browser-heading">
@@ -236,6 +262,97 @@ function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function RandomMatchPanel({ prediction, loading, onGenerate }) {
+  const teams = prediction?.teams || [];
+  const leader = teams.length
+    ? [...teams].sort((a, b) => b.probability - a.probability)[0]
+    : null;
+
+  return (
+    <section className="simulation-panel">
+      <div className="section-heading">
+        <div>
+          <p className="label">Random 5v5 scrim</p>
+          <h2>{leader ? `${leader.name} favored` : "No generated match yet"}</h2>
+        </div>
+        <button onClick={onGenerate} disabled={loading}>
+          <Shuffle size={18} className={loading ? "spin" : ""} />
+          {loading ? "Rolling" : prediction ? "Reroll" : "Generate"}
+        </button>
+      </div>
+
+      {prediction ? (
+        <>
+          <div className="simulation-meta">
+            <span>Confidence {formatPercent(prediction.confidence || 0)}</span>
+            <span>Rating diff {formatDecimal(prediction.signals?.ratingDiff || 0, 1)}</span>
+            <span>{prediction.signals?.predictionInput || "rating-only"}</span>
+          </div>
+          <InlinePredictionMeter prediction={prediction} />
+          <div className="simulation-teams">
+            {teams.map((team) => (
+              <SimulatedTeam key={team.team} team={team} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="simulation-empty">
+          <Trophy size={28} />
+          <strong>Ready for a generated matchup</strong>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function InlinePredictionMeter({ prediction }) {
+  const teams = prediction?.teams || [];
+  const iron = teams.find((team) => team.team === 0);
+  const free = teams.find((team) => team.team === 1);
+  const ironPercent = Math.round((iron?.probability || 0.5) * 100);
+
+  return (
+    <div className="inline-meter">
+      <div className="meter-labels">
+        <strong>{iron?.name || "Iron Company"}</strong>
+        <strong>{free?.name || "Free Guard"}</strong>
+      </div>
+      <div className="meter-track">
+        <div className="meter-iron" style={{ width: `${ironPercent}%` }} />
+        <div className="meter-free" />
+      </div>
+      <div className="meter-values">
+        <span>{formatPercent(iron?.probability || 0)}</span>
+        <span>{formatPercent(free?.probability || 0)}</span>
+      </div>
+    </div>
+  );
+}
+
+function SimulatedTeam({ team }) {
+  return (
+    <div className="simulation-team">
+      <div className="section-heading">
+        <div>
+          <p className="label">{formatPercent(team.probability)}</p>
+          <h2>{team.name}</h2>
+        </div>
+        <span className="score-pill">{formatNumber(team.averageRating)}</span>
+      </div>
+      <div className="simulated-players">
+        {team.players.map((player) => (
+          <div className="simulated-player" key={player.fabid}>
+            <span className="player-name">{player.name}</span>
+            <span>{formatNumber(player.rating)}</span>
+            <span>{formatNumber(player.historicalMatches)} matches</span>
+            <span>{formatDecimal(player.kd)} KD</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

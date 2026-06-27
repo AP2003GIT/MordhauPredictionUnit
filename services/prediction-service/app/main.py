@@ -3,10 +3,12 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import math
+import random
 
 from .data_client import DataServiceClient, DataServiceError
 from .predictor import predict_current_match
 from .ratings import build_player_ratings
+from .simulation import build_random_match_prediction
 
 
 app = FastAPI(title="Mordhau Prediction Service", version="0.1.0")
@@ -55,19 +57,7 @@ def predict_current(history_limit: int = Query(default=9999, ge=1, le=20000)) ->
 
 @app.get("/ratings")
 def ratings(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
-    client = DataServiceClient()
-    try:
-        history = client.get_json("/matches/history", {"limit": 20000, "order": "asc"})
-        known_players = client.get_json("/players/all", {"limit": 20000})
-    except DataServiceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    matches = history.get("matches", [])
-    player_ratings = build_player_ratings(matches if isinstance(matches, list) else [])
-    players = merge_player_ratings(
-        player_ratings,
-        known_players.get("players", []) if isinstance(known_players, dict) else [],
-    )
+    players = load_player_catalog()
     sorted_players = sorted(
         players,
         key=lambda player: (player["displayRating"], player["matches"]),
@@ -81,6 +71,19 @@ def ratings(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
     }
 
 
+@app.get("/predict/random")
+def predict_random(
+    team_size: int = Query(default=5, ge=1, le=16),
+    seed: int | None = Query(default=None),
+) -> dict:
+    players = load_player_catalog()
+    rng = random.Random(seed) if seed is not None else random.SystemRandom()
+    try:
+        return build_random_match_prediction(players, team_size=team_size, rng=rng)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/matches/recent")
 def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
     client = DataServiceClient()
@@ -88,6 +91,23 @@ def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
         return client.get_json("/matches/recent", {"limit": limit})
     except DataServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def load_player_catalog() -> list[dict]:
+    client = DataServiceClient()
+    try:
+        history = client.get_json("/matches/history", {"limit": 20000, "order": "asc"})
+        known_players = client.get_json("/players/all", {"limit": 20000})
+    except DataServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    matches = history.get("matches", [])
+    player_ratings = build_player_ratings(matches if isinstance(matches, list) else [])
+    players = merge_player_ratings(
+        player_ratings,
+        known_players.get("players", []) if isinstance(known_players, dict) else [],
+    )
+    return players
 
 
 def merge_player_ratings(player_ratings: dict, known_players: list) -> list[dict]:
