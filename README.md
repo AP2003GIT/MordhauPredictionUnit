@@ -10,6 +10,8 @@ The first version is a small microservice system:
 
 The prediction baseline is intentionally explainable: it builds Elo-style player ratings from completed matches, combines both teams' ratings with live scoreboard signals, then returns a probability for each team.
 
+For the formulas behind player rating, team probability, confidence, and the ML model, see [docs/MATHEMATICS.md](docs/MATHEMATICS.md).
+
 ## Project Layout
 
 ```text
