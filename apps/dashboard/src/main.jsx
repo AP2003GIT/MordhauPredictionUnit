@@ -346,6 +346,7 @@ function RandomMatchPanel({ prediction, loading, onGenerate }) {
 }
 
 function ModelPanel({ modelStatus, training, onTrain, prediction, randomPrediction }) {
+  const metrics = modelStatus?.metrics;
   const trainMetrics = modelStatus?.metrics?.train;
   const testMetrics = modelStatus?.metrics?.test;
 
@@ -380,6 +381,8 @@ function ModelPanel({ modelStatus, training, onTrain, prediction, randomPredicti
         </div>
       </div>
 
+      <BacktestComparison metrics={metrics} />
+
       {modelStatus?.topWeights?.length ? (
         <div className="signal-strip">
           {modelStatus.topWeights.map((signal) => (
@@ -390,6 +393,45 @@ function ModelPanel({ modelStatus, training, onTrain, prediction, randomPredicti
         </div>
       ) : null}
     </section>
+  );
+}
+
+function BacktestComparison({ metrics }) {
+  const model = metrics?.test;
+  const baseline = metrics?.baseline?.test;
+  const comparison = metrics?.comparison?.test;
+
+  if (!model || !baseline || !comparison) return null;
+
+  return (
+    <div className="backtest-panel">
+      <div className="backtest-heading">
+        <div>
+          <span>Model vs baseline</span>
+          <strong>{formatNumber(model.examples)} held-out matches</strong>
+        </div>
+        <strong className={comparison.winner === "model" ? "winner-model" : "winner-baseline"}>
+          {comparison.winner === "model" ? "ML leading" : "Baseline leading"}
+        </strong>
+      </div>
+
+      <div className="backtest-grid">
+        <BacktestTile label="ML accuracy" value={formatMetric(model.accuracy)} />
+        <BacktestTile label="Baseline accuracy" value={formatMetric(baseline.accuracy)} />
+        <BacktestTile label="Accuracy lift" value={formatDeltaPercent(comparison.accuracyDelta)} />
+        <BacktestTile label="Log loss lift" value={formatSignedMetric(comparison.logLossImprovement)} />
+        <BacktestTile label="Brier lift" value={formatSignedMetric(comparison.brierImprovement)} />
+      </div>
+    </div>
+  );
+}
+
+function BacktestTile({ label, value }) {
+  return (
+    <div className="backtest-tile">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -637,6 +679,18 @@ function formatSigned(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
   return `${number >= 0 ? "+" : ""}${number.toFixed(3)}`;
+}
+
+function formatSignedMetric(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${number >= 0 ? "+" : ""}${number.toFixed(4)}`;
+}
+
+function formatDeltaPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${number >= 0 ? "+" : ""}${(number * 100).toFixed(1)} pts`;
 }
 
 function featureLabel(feature) {

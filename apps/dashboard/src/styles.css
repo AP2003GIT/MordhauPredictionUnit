@@ -332,6 +332,71 @@ h2 {
   text-align: right;
 }
 
+.backtest-panel {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #2a333c;
+  padding-top: 14px;
+}
+
+.backtest-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.backtest-heading div {
+  display: grid;
+  gap: 3px;
+}
+
+.backtest-heading span {
+  color: #9aabba;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.backtest-heading strong {
+  color: #f5f7fa;
+}
+
+.winner-model {
+  color: #8bd8d3 !important;
+}
+
+.winner-baseline {
+  color: #f1bb77 !important;
+}
+
+.backtest-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.backtest-tile {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  border: 1px solid #2c3741;
+  border-radius: 8px;
+  padding: 9px;
+  background: #10151a;
+}
+
+.backtest-tile span {
+  color: #9aabba;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.backtest-tile strong {
+  color: #f5f7fa;
+}
+
 .signal-strip {
   display: flex;
   gap: 8px;
@@ -742,7 +807,8 @@ h2 {
   }
 
   .model-layout,
-  .model-metrics {
+  .model-metrics,
+  .backtest-grid {
     grid-template-columns: 1fr;
   }
 

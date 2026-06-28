@@ -24,6 +24,10 @@ def test_ml_training_favors_stronger_historical_team() -> None:
     dataset = build_training_dataset(matches)
     model = train_logistic_model(dataset.examples, iterations=500)
 
+    assert model.metrics["baseline"]["train"]["examples"] == model.training_examples
+    assert model.metrics["baseline"]["test"]["examples"] == model.test_examples
+    assert model.metrics["comparison"]["train"]["winner"] in ("model", "baseline")
+
     features = build_team_feature_differences(
         {
             0: [{"fabid": "strong-a"}, {"fabid": "strong-b"}],

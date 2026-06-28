@@ -11,6 +11,7 @@ from .ml_features import FEATURE_NAMES, TrainingExample
 
 
 MODEL_VERSION = "logistic-regression-v1"
+BASELINE_RATING_SCALE = 180.0
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,15 @@ def train_logistic_model(
             gradient = (gradients[name] / sample_count) + l2 * weights[name]
             weights[name] -= learning_rate * gradient
 
+    train_model_metrics = evaluate_model(weights, intercept, means, scales, train_examples)
+    test_model_metrics = (
+        evaluate_model(weights, intercept, means, scales, test_examples)
+        if test_examples
+        else None
+    )
+    train_baseline_metrics = evaluate_baseline(train_examples)
+    test_baseline_metrics = evaluate_baseline(test_examples) if test_examples else None
+
     model = LogisticMatchModel(
         feature_names=list(FEATURE_NAMES),
         means=means,
@@ -143,10 +153,17 @@ def train_logistic_model(
         training_examples=len(train_examples),
         test_examples=len(test_examples),
         metrics={
-            "train": evaluate_model(weights, intercept, means, scales, train_examples),
-            "test": evaluate_model(weights, intercept, means, scales, test_examples)
-            if test_examples
-            else None,
+            "train": train_model_metrics,
+            "test": test_model_metrics,
+            "baseline": {
+                "train": train_baseline_metrics,
+                "test": test_baseline_metrics,
+                "formula": f"sigmoid(avg_rating_diff / {BASELINE_RATING_SCALE:g})",
+            },
+            "comparison": {
+                "train": compare_metrics(train_model_metrics, train_baseline_metrics),
+                "test": compare_metrics(test_model_metrics, test_baseline_metrics),
+            },
         },
     )
     return model
@@ -191,6 +208,39 @@ def evaluate_model(
     scales: dict[str, float],
     examples: list[TrainingExample],
 ) -> dict[str, float | int]:
+    return evaluate_probabilities(
+        examples,
+        lambda example: model_probability(weights, intercept, means, scales, example),
+    )
+
+
+def model_probability(
+    weights: dict[str, float],
+    intercept: float,
+    means: dict[str, float],
+    scales: dict[str, float],
+    example: TrainingExample,
+) -> float:
+    standardized = standardize(example.features, means, scales)
+    logit = intercept + sum(weights[name] * standardized[name] for name in FEATURE_NAMES)
+    return clamp(sigmoid(logit))
+
+
+def evaluate_baseline(examples: list[TrainingExample]) -> dict[str, float | int]:
+    return evaluate_probabilities(
+        examples,
+        lambda example: baseline_probability(example.features),
+    )
+
+
+def baseline_probability(features: dict[str, float]) -> float:
+    return clamp(sigmoid(float(features.get("avg_rating_diff", 0.0)) / BASELINE_RATING_SCALE))
+
+
+def evaluate_probabilities(
+    examples: list[TrainingExample],
+    probability_fn,
+) -> dict[str, float | int]:
     if not examples:
         return {"examples": 0, "accuracy": 0.0, "logLoss": 0.0, "brier": 0.0}
 
@@ -198,9 +248,7 @@ def evaluate_model(
     log_loss = 0.0
     brier = 0.0
     for example in examples:
-        standardized = standardize(example.features, means, scales)
-        logit = intercept + sum(weights[name] * standardized[name] for name in FEATURE_NAMES)
-        probability = clamp(sigmoid(logit))
+        probability = clamp(probability_fn(example))
         predicted = 1 if probability >= 0.5 else 0
         correct += 1 if predicted == example.label else 0
         log_loss += -(
@@ -215,6 +263,26 @@ def evaluate_model(
         "accuracy": round(correct / count, 4),
         "logLoss": round(log_loss / count, 4),
         "brier": round(brier / count, 4),
+    }
+
+
+def compare_metrics(
+    model_metrics: dict[str, float | int] | None,
+    baseline_metrics: dict[str, float | int] | None,
+) -> dict[str, float | str] | None:
+    if not model_metrics or not baseline_metrics:
+        return None
+
+    accuracy_delta = float(model_metrics["accuracy"]) - float(baseline_metrics["accuracy"])
+    log_loss_delta = float(baseline_metrics["logLoss"]) - float(model_metrics["logLoss"])
+    brier_delta = float(baseline_metrics["brier"]) - float(model_metrics["brier"])
+    score = accuracy_delta + log_loss_delta + brier_delta
+
+    return {
+        "accuracyDelta": round(accuracy_delta, 4),
+        "logLossImprovement": round(log_loss_delta, 4),
+        "brierImprovement": round(brier_delta, 4),
+        "winner": "model" if score >= 0 else "baseline",
     }
 
 

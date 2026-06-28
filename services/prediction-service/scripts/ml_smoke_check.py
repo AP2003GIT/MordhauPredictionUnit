@@ -29,6 +29,9 @@ def main() -> None:
     matches = [make_match(index, 0 if index % 5 else 1) for index in range(30)]
     dataset = build_training_dataset(matches)
     model = train_logistic_model(dataset.examples, iterations=500)
+    assert model.metrics["baseline"]["train"]["examples"] == model.training_examples
+    assert model.metrics["baseline"]["test"]["examples"] == model.test_examples
+    assert model.metrics["comparison"]["train"]["winner"] in ("model", "baseline")
     features = build_team_feature_differences(
         {
             0: [{"fabid": "strong-a"}, {"fabid": "strong-b"}],
@@ -38,7 +41,14 @@ def main() -> None:
     )
     probability = model.predict_probability(features)
     assert probability > 0.5
-    print({"ml": "ok", "examples": len(dataset.examples), "team0Probability": round(probability, 4)})
+    print(
+        {
+            "ml": "ok",
+            "examples": len(dataset.examples),
+            "team0Probability": round(probability, 4),
+            "baselineAccuracy": model.metrics["baseline"]["train"]["accuracy"],
+        }
+    )
 
 
 if __name__ == "__main__":

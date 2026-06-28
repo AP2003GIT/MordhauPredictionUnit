@@ -387,6 +387,44 @@ brier = average((P - y)^2)
 
 Lower log loss and lower Brier score are better. Accuracy is easy to read, but log loss and Brier score are better for judging whether probabilities are well-calibrated.
 
+## Model vs Baseline Backtesting
+
+The system also compares the trained ML model against the explainable baseline on the same held-out test matches.
+
+The baseline probability for each historical test row is:
+
+```text
+baseline_P_0 = sigmoid(avg_rating_diff / 180)
+```
+
+The ML probability is:
+
+```text
+model_P_0 = sigmoid(intercept + sum(weight_i * z_i))
+```
+
+Both predictions are scored against the same label:
+
+```text
+y = 1 if team 0 won
+y = 0 if team 1 won
+```
+
+The comparison reports:
+
+```text
+accuracy_delta = model_accuracy - baseline_accuracy
+```
+
+For log loss and Brier score, lower is better, so improvement is:
+
+```text
+log_loss_improvement = baseline_log_loss - model_log_loss
+brier_improvement    = baseline_brier    - model_brier
+```
+
+Positive values mean the ML model beat the baseline for that metric. Negative values mean the baseline was better.
+
 ## ML Explanations
 
 For a prediction, each feature contribution is:

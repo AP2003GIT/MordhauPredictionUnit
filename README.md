@@ -161,12 +161,11 @@ Train or refresh the saved model:
 curl -X POST "http://127.0.0.1:8002/model/train"
 ```
 
-The trained model is a small JSON logistic regression model stored under `services/prediction-service/data/`, which is ignored by Git. `GET /model/status` returns train/test accuracy, log loss, Brier score, and the strongest learned feature weights.
+The trained model is a small JSON logistic regression model stored under `services/prediction-service/data/`, which is ignored by Git. `GET /model/status` returns train/test accuracy, log loss, Brier score, model-vs-baseline backtesting, and the strongest learned feature weights.
 
 Good next upgrades:
 
 - per-map and per-mode player ratings
 - recent form weighting
-- model-vs-baseline backtesting reports
 - stronger models such as gradient boosting once the dataset is larger
 - confidence score based on team sample size and live match progress
