@@ -102,7 +102,10 @@ function Ensure-Dashboard {
     $dashboardPath = Join-Path $Root "apps\dashboard"
     $nodeModules = Join-Path $dashboardPath "node_modules"
 
-    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) {
+        $npm = Get-Command npm -ErrorAction SilentlyContinue
+    }
     if (-not $npm) {
         throw "npm was not found. Install Node.js 20+ and run this launcher again."
     }
@@ -111,14 +114,14 @@ function Ensure-Dashboard {
     try {
         if (-not $SkipInstall -and -not (Test-Path $nodeModules)) {
             Write-Step "Installing dashboard dependencies"
-            npm install
+            & $npm.Source install
             if ($LASTEXITCODE -ne 0) {
                 throw "Could not install dashboard dependencies."
             }
         }
 
         Write-Step "Building dashboard"
-        npm run build
+        & $npm.Source run build
         if ($LASTEXITCODE -ne 0) {
             throw "Could not build dashboard."
         }
@@ -205,18 +208,22 @@ Write-Step "Preparing local stack"
 $basePython = Find-BasePython
 $dataPath = Join-Path $Root "services\data-service"
 $predictionPath = Join-Path $Root "services\prediction-service"
+$autobalancePath = Join-Path $Root "services\autobalance-service"
 $dashboardDist = Join-Path $Root "apps\dashboard\dist"
 
 $dataPython = Ensure-PythonService -Name "data-service" -Path $dataPath -BasePython $basePython
 $predictionPython = Ensure-PythonService -Name "prediction-service" -Path $predictionPath -BasePython $basePython
+$autobalancePython = Ensure-PythonService -Name "autobalance-service" -Path $autobalancePath -BasePython $basePython
 Ensure-Dashboard
 
 Stop-PidFile "dashboard"
+Stop-PidFile "autobalance-service"
 Stop-PidFile "prediction-service"
 Stop-PidFile "data-service"
 
 Test-PortFree 8001
 Test-PortFree 8002
+Test-PortFree 8003
 Test-PortFree 5173
 
 Start-ServiceProcess `
@@ -234,6 +241,14 @@ Start-ServiceProcess `
     -WorkingDirectory $predictionPath
 
 Wait-Http "http://127.0.0.1:8002/health" 30
+
+Start-ServiceProcess `
+    -Name "autobalance-service" `
+    -FilePath $autobalancePython `
+    -Arguments @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8003") `
+    -WorkingDirectory $autobalancePath
+
+Wait-Http "http://127.0.0.1:8003/health" 30
 
 if (-not $SkipIngest) {
     try {
@@ -261,4 +276,5 @@ Write-Step "Ready"
 Write-Host "Dashboard:          http://127.0.0.1:5173/"
 Write-Host "Data service:       http://127.0.0.1:8001/health"
 Write-Host "Prediction service: http://127.0.0.1:8002/health"
+Write-Host "Autobalance:        http://127.0.0.1:8003/health"
 Write-Host "Logs:               $LogDir"

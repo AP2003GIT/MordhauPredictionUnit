@@ -57,6 +57,7 @@ select {
 .model-panel,
 .team-panel,
 .simulation-panel,
+.autobalance-panel,
 .leaderboard,
 .empty-state {
   border: 1px solid #323b45;
@@ -202,6 +203,7 @@ h2 {
 .team-panel,
 .model-panel,
 .simulation-panel,
+.autobalance-panel,
 .leaderboard,
 .empty-state {
   border-radius: 8px;
@@ -481,6 +483,130 @@ h2 {
   border-radius: 8px;
   color: #a9b7c4;
   text-align: center;
+}
+
+.autobalance-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.autobalance-actions,
+.safety-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.autobalance-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.safety-badge {
+  min-height: 36px;
+  border: 1px solid #3b675f;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #172923;
+  color: #95ddd1;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.balance-notice,
+.balance-reason {
+  margin: 0;
+  border: 1px solid #655739;
+  border-radius: 8px;
+  padding: 12px;
+  background: #2a2418;
+  color: #f2d39b;
+  font-weight: 700;
+}
+
+.autobalance-empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 92px;
+  border: 1px dashed #3a4651;
+  border-radius: 8px;
+  padding: 16px;
+  color: #9ed7d4;
+}
+
+.autobalance-empty div {
+  display: grid;
+  gap: 4px;
+}
+
+.autobalance-empty span {
+  color: #9cabb9;
+}
+
+.balance-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.balance-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  color: #8bd8d3;
+}
+
+.balance-comparison div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  border: 1px solid #2c3741;
+  border-radius: 8px;
+  padding: 12px;
+  background: #10151a;
+}
+
+.balance-comparison span,
+.balance-move span {
+  color: #9aabba;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.balance-moves {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.balance-move {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  border: 1px solid #2f3842;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #151a1f;
+}
+
+.balance-move div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.balance-move strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-browser-heading svg {
@@ -808,8 +934,24 @@ h2 {
 
   .model-layout,
   .model-metrics,
-  .backtest-grid {
+  .backtest-grid,
+  .balance-metrics,
+  .balance-moves {
     grid-template-columns: 1fr;
+  }
+
+  .autobalance-panel .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .balance-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .balance-comparison > svg {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 
   .simulated-player {

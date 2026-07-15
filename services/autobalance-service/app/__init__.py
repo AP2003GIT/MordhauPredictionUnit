@@ -1,0 +1,1 @@
+"""Mordhau autobalance service."""

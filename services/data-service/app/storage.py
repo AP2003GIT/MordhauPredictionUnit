@@ -127,6 +127,11 @@ def upsert_matches(connection: sqlite3.Connection, matches: Iterable[dict[str, A
             ),
         )
 
+        # Treat the incoming match as the complete latest representation. Without
+        # clearing prior rows, corrected upstream payloads leave removed players
+        # in the normalized table even though raw_json has already been replaced.
+        connection.execute("DELETE FROM player_matches WHERE match_key = ?", (match_key,))
+
         players = match.get("players", [])
         if isinstance(players, list):
             for player in players:

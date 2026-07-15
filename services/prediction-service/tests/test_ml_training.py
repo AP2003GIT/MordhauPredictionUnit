@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unittest
+
 from app.ml_features import build_team_feature_differences, build_training_dataset
 from app.ml_model import train_logistic_model
 
@@ -19,21 +21,28 @@ def make_match(index: int, winner: int) -> dict:
     }
 
 
-def test_ml_training_favors_stronger_historical_team() -> None:
-    matches = [make_match(index, 0 if index % 5 else 1) for index in range(30)]
-    dataset = build_training_dataset(matches)
-    model = train_logistic_model(dataset.examples, iterations=500)
+class MlTrainingTests(unittest.TestCase):
+    def test_ml_training_favors_stronger_historical_team(self) -> None:
+        matches = [make_match(index, 0 if index % 5 else 1) for index in range(30)]
+        dataset = build_training_dataset(matches)
+        model = train_logistic_model(dataset.examples, iterations=500)
 
-    assert model.metrics["baseline"]["train"]["examples"] == model.training_examples
-    assert model.metrics["baseline"]["test"]["examples"] == model.test_examples
-    assert model.metrics["comparison"]["train"]["winner"] in ("model", "baseline")
+        self.assertEqual(
+            model.metrics["baseline"]["train"]["examples"],
+            model.training_examples,
+        )
+        self.assertEqual(
+            model.metrics["baseline"]["test"]["examples"],
+            model.test_examples,
+        )
+        self.assertIn(model.metrics["comparison"]["train"]["winner"], ("model", "baseline"))
 
-    features = build_team_feature_differences(
-        {
-            0: [{"fabid": "strong-a"}, {"fabid": "strong-b"}],
-            1: [{"fabid": "weak-a"}, {"fabid": "weak-b"}],
-        },
-        dataset.final_ratings,
-    )
+        features = build_team_feature_differences(
+            {
+                0: [{"fabid": "strong-a"}, {"fabid": "strong-b"}],
+                1: [{"fabid": "weak-a"}, {"fabid": "weak-b"}],
+            },
+            dataset.final_ratings,
+        )
 
-    assert model.predict_probability(features) > 0.5
+        self.assertGreater(model.predict_probability(features), 0.5)

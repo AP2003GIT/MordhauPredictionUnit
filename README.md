@@ -6,6 +6,7 @@ The first version is a small microservice system:
 
 - `data-service` owns Needys API ingestion, match storage, and live scoreboard snapshots
 - `prediction-service` builds player ratings and returns win probabilities
+- `autobalance-service` generates guarded, dry-run team assignments
 - `dashboard` displays the live prediction and top player ratings
 
 The prediction baseline is intentionally explainable: it builds Elo-style player ratings from completed matches, combines both teams' ratings with live scoreboard signals, then returns a probability for each team.
@@ -18,6 +19,7 @@ For the formulas behind player rating, team probability, confidence, and the ML 
 services/
   data-service/        FastAPI service for ingestion and SQLite persistence
   prediction-service/  FastAPI service for ratings and win probabilities
+  autobalance-service/ FastAPI service for dry-run team balancing
 apps/
   dashboard/           React + Vite dashboard
 docker-compose.yml     Local microservice runtime
@@ -120,10 +122,35 @@ Prediction service on `:8002`:
 - `GET /predict/random?team_size=5`
 - `GET /ratings?limit=20000`
 - `GET /matches/recent?limit=20`
+
+Autobalance service on `:8003`:
+
+- `GET /health`
+- `POST /balance/preview`
+- `POST /balance/apply` (intentionally disabled during the dry-run milestone)
 - `POST /model/train`
 - `GET /model/status`
 
 ## Verification
+
+Run the dependency-free unit tests:
+
+```bash
+cd services/data-service
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+```bash
+cd services/prediction-service
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+```bash
+cd services/autobalance-service
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Run the live-service smoke checks after starting the application:
 
 ```bash
 cd services/data-service

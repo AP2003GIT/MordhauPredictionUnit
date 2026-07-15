@@ -1,12 +1,19 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8002";
+const AUTOBALANCE_API_BASE_URL =
+  import.meta.env.VITE_AUTOBALANCE_API_BASE_URL || "http://localhost:8003";
 export const ALL_PLAYERS_LIMIT = 20000;
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+async function requestFrom(baseUrl, path, options = {}) {
+  const response = await fetch(`${baseUrl}${path}`, options);
+  const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    throw new Error(payload?.detail || `${response.status} ${response.statusText}`);
   }
-  return response.json();
+  return payload;
+}
+
+async function request(path, options = {}) {
+  return requestFrom(API_BASE_URL, path, options);
 }
 
 export function fetchPrediction() {
@@ -31,4 +38,12 @@ export function fetchRatings(limit = ALL_PLAYERS_LIMIT) {
 
 export function ingestHistory(limit = 9999) {
   return request(`/ingest/history?limit=${limit}`, { method: "POST" });
+}
+
+export function fetchBalancePreview(options = {}) {
+  return requestFrom(AUTOBALANCE_API_BASE_URL, "/balance/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
 }

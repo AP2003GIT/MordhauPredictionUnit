@@ -19,16 +19,30 @@ services:
     depends_on:
       - data-service
 
+  autobalance-service:
+    build:
+      context: ./services/autobalance-service
+    environment:
+      DATA_SERVICE_URL: http://data-service:8001
+      PREDICTION_SERVICE_URL: http://prediction-service:8002
+      AUTOBALANCE_DRY_RUN: "true"
+    ports:
+      - "8003:8003"
+    depends_on:
+      - data-service
+      - prediction-service
+
   dashboard:
     build:
       context: ./apps/dashboard
     environment:
       VITE_API_BASE_URL: http://localhost:8002
+      VITE_AUTOBALANCE_API_BASE_URL: http://localhost:8003
     ports:
       - "5173:5173"
     depends_on:
       - prediction-service
+      - autobalance-service
 
 volumes:
   mpu-data:
-

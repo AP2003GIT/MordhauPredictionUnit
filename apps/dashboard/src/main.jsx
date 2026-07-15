@@ -10,8 +10,12 @@ import {
   UserRound,
   Shuffle,
   BrainCircuit,
+  Scale,
+  ShieldCheck,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
+  fetchBalancePreview,
   fetchModelStatus,
   fetchPrediction,
   fetchRandomPrediction,
@@ -45,6 +49,9 @@ function App() {
   const [error, setError] = useState("");
   const [randomPrediction, setRandomPrediction] = useState(null);
   const [modelStatus, setModelStatus] = useState(null);
+  const [balancePreview, setBalancePreview] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
   const [playerQuery, setPlayerQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortKey, setSortKey] = useState("displayRating");
@@ -106,6 +113,20 @@ function App() {
       setError(err.message || "Ingest failed");
     } finally {
       setIngesting(false);
+    }
+  }
+
+  async function handleBalancePreview() {
+    setBalanceLoading(true);
+    setBalanceError("");
+    try {
+      const preview = await fetchBalancePreview({ maxMoves: 4, tolerance: 0.05 });
+      setBalancePreview(preview);
+    } catch (err) {
+      setBalancePreview(null);
+      setBalanceError(err.message || "Balance preview failed");
+    } finally {
+      setBalanceLoading(false);
     }
   }
 
@@ -215,6 +236,13 @@ function App() {
         onGenerate={handleRandomPrediction}
       />
 
+      <AutobalancePanel
+        preview={balancePreview}
+        loading={balanceLoading}
+        error={balanceError}
+        onPreview={handleBalancePreview}
+      />
+
       <section className="leaderboard">
         <div className="section-heading player-browser-heading">
           <div>
@@ -296,6 +324,104 @@ function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function AutobalancePanel({ preview, loading, error, onPreview }) {
+  const moves = preview?.moves || [];
+  const current = preview?.current;
+  const proposed = preview?.proposed;
+
+  return (
+    <section className="autobalance-panel">
+      <div className="section-heading">
+        <div>
+          <p className="label">Autobalance</p>
+          <h2>{preview ? "Team recommendation ready" : "Dry-run controller"}</h2>
+        </div>
+        <div className="autobalance-actions">
+          <span className="safety-badge">
+            <ShieldCheck size={15} />
+            Apply locked
+          </span>
+          <button onClick={onPreview} disabled={loading}>
+            <Scale size={18} className={loading ? "spin" : ""} />
+            {loading ? "Calculating" : preview ? "Recalculate" : "Preview live roster"}
+          </button>
+        </div>
+      </div>
+
+      {error ? <div className="balance-notice">{error}</div> : null}
+
+      {!preview && !error ? (
+        <div className="autobalance-empty">
+          <Scale size={30} />
+          <div>
+            <strong>No team changes can be executed</strong>
+            <span>Preview uses live PlayFab IDs and current historical ratings.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {preview ? (
+        <>
+          <div className="balance-metrics">
+            <StatTile label="Players" value={formatNumber(preview.playerCount)} />
+            <StatTile label="Recommended moves" value={formatNumber(moves.length)} />
+            <StatTile
+              label="Current spread"
+              value={formatPercent(current?.probabilitySpread || 0)}
+            />
+            <StatTile
+              label="Proposed spread"
+              value={formatPercent(proposed?.probabilitySpread || 0)}
+            />
+          </div>
+
+          <div className="balance-comparison">
+            <div>
+              <span>Before</span>
+              <strong>
+                {formatPercent(current?.team0Probability || 0.5)} /{" "}
+                {formatPercent(current?.team1Probability || 0.5)}
+              </strong>
+            </div>
+            <ArrowRightLeft size={20} />
+            <div>
+              <span>After</span>
+              <strong>
+                {formatPercent(proposed?.team0Probability || 0.5)} /{" "}
+                {formatPercent(proposed?.team1Probability || 0.5)}
+              </strong>
+            </div>
+          </div>
+
+          <p className="balance-reason">{preview.reason}</p>
+
+          {moves.length ? (
+            <div className="balance-moves">
+              {moves.map((move) => (
+                <div className="balance-move" key={move.fabid}>
+                  <div>
+                    <strong>{move.name}</strong>
+                    <span>{formatNumber(move.effectiveRating)} effective rating</span>
+                  </div>
+                  <span>
+                    {move.fromTeamName} → {move.toTeamName}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="simulation-meta">
+            <span>{preview.algorithm}</span>
+            <span>{formatNumber(preview.evaluatedAssignments)} assignments checked</span>
+            <span>Maximum {preview.constraints?.maxMoves} moves</span>
+          </div>
+        </>
+      ) : null}
+    </section>
   );
 }
 
