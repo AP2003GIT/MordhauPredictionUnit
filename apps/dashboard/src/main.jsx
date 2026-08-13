@@ -1,4 +1,4 @@
-import React, { StrictMode, useEffect, useMemo, useState } from "react";
+import React, { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   RefreshCw,
@@ -13,6 +13,10 @@ import {
   Scale,
   ShieldCheck,
   ArrowRightLeft,
+  Download,
+  Pause,
+  Play,
+  Radio,
 } from "lucide-react";
 import {
   fetchBalancePreview,
@@ -20,6 +24,7 @@ import {
   fetchPrediction,
   fetchRandomPrediction,
   fetchRatings,
+  fetchSyncStatus,
   ingestHistory,
   trainModel,
 } from "./api";
@@ -39,6 +44,9 @@ const SORT_OPTIONS = [
   { value: "kills", label: "Kills" },
 ];
 
+const REFRESH_INTERVAL_SECONDS = 30;
+const AUTO_REFRESH_STORAGE_KEY = "mpu-auto-refresh";
+
 function App() {
   const [prediction, setPrediction] = useState(null);
   const [ratings, setRatings] = useState([]);
@@ -56,25 +64,43 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortKey, setSortKey] = useState("displayRating");
   const [selectedFabid, setSelectedFabid] = useState("");
+  const [syncStatus, setSyncStatus] = useState(null);
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(REFRESH_INTERVAL_SECONDS);
+  const [autoRefresh, setAutoRefresh] = useState(
+    () => window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY) !== "off",
+  );
+  const [maxMoves, setMaxMoves] = useState(4);
+  const [balanceTolerance, setBalanceTolerance] = useState(0.05);
 
-  async function refresh() {
-    setLoading(true);
+  const refresh = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setError("");
-    try {
-      const [predictionData, ratingsData, modelStatusData] = await Promise.all([
-        fetchPrediction(),
-        fetchRatings(),
-        fetchModelStatus(),
-      ]);
-      setPrediction(predictionData);
-      setRatings(ratingsData.players || []);
-      setModelStatus(modelStatusData);
-    } catch (err) {
-      setError(err.message || "Request failed");
-    } finally {
-      setLoading(false);
+    const requests = [
+      ["prediction", fetchPrediction(), setPrediction],
+      ["ratings", fetchRatings(), (payload) => setRatings(payload.players || [])],
+      ["model", fetchModelStatus(), setModelStatus],
+      ["sync status", fetchSyncStatus(), setSyncStatus],
+    ];
+    const results = await Promise.allSettled(requests.map(([, request]) => request));
+    const failures = [];
+
+    results.forEach((result, index) => {
+      const [label, , applyResult] = requests[index];
+      if (result.status === "fulfilled") {
+        applyResult(result.value);
+      } else {
+        failures.push(`${label}: ${result.reason?.message || "unavailable"}`);
+      }
+    });
+
+    if (failures.length) {
+      setError(`Some data could not refresh — ${failures.join(" · ")}`);
     }
-  }
+    setLastRefreshAt(new Date());
+    setSecondsUntilRefresh(REFRESH_INTERVAL_SECONDS);
+    if (!silent) setLoading(false);
+  }, []);
 
   async function handleRandomPrediction() {
     setRandomLoading(true);
@@ -120,7 +146,10 @@ function App() {
     setBalanceLoading(true);
     setBalanceError("");
     try {
-      const preview = await fetchBalancePreview({ maxMoves: 4, tolerance: 0.05 });
+      const preview = await fetchBalancePreview({
+        maxMoves,
+        tolerance: balanceTolerance,
+      });
       setBalancePreview(preview);
     } catch (err) {
       setBalancePreview(null);
@@ -132,9 +161,28 @@ function App() {
 
   useEffect(() => {
     refresh();
-    const id = window.setInterval(refresh, 30000);
-    return () => window.clearInterval(id);
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, autoRefresh ? "on" : "off");
+    setSecondsUntilRefresh(REFRESH_INTERVAL_SECONDS);
+    if (!autoRefresh) return undefined;
+
+    const refreshId = window.setInterval(
+      () => refresh({ silent: true }),
+      REFRESH_INTERVAL_SECONDS * 1000,
+    );
+    const countdownId = window.setInterval(() => {
+      setSecondsUntilRefresh((seconds) =>
+        seconds <= 1 ? REFRESH_INTERVAL_SECONDS : seconds - 1,
+      );
+    }, 1000);
+
+    return () => {
+      window.clearInterval(refreshId);
+      window.clearInterval(countdownId);
+    };
+  }, [autoRefresh, refresh]);
 
   const leader = useMemo(() => {
     if (!prediction?.teams?.length) return null;
@@ -175,6 +223,14 @@ function App() {
           <h1>Live win probability</h1>
         </div>
         <div className="actions">
+          <button
+            className={autoRefresh ? "toggle-button is-active" : "toggle-button"}
+            onClick={() => setAutoRefresh((enabled) => !enabled)}
+            type="button"
+          >
+            {autoRefresh ? <Pause size={18} /> : <Play size={18} />}
+            {autoRefresh ? `Auto ${secondsUntilRefresh}s` : "Auto paused"}
+          </button>
           <button onClick={handleIngest} disabled={ingesting}>
             <Database size={18} />
             {ingesting ? "Ingesting" : "Ingest"}
@@ -191,6 +247,13 @@ function App() {
       </section>
 
       {error ? <div className="status error">{error}</div> : null}
+
+      <SyncStatusBar
+        status={syncStatus}
+        autoRefresh={autoRefresh}
+        secondsUntilRefresh={secondsUntilRefresh}
+        lastRefreshAt={lastRefreshAt}
+      />
 
       <section className="prediction-band">
         <div className="prediction-summary">
@@ -241,6 +304,10 @@ function App() {
         loading={balanceLoading}
         error={balanceError}
         onPreview={handleBalancePreview}
+        maxMoves={maxMoves}
+        onMaxMovesChange={setMaxMoves}
+        tolerance={balanceTolerance}
+        onToleranceChange={setBalanceTolerance}
       />
 
       <section className="leaderboard">
@@ -251,7 +318,17 @@ function App() {
               {filteredRatings.length} of {ratings.length} players shown
             </span>
           </div>
-          <SlidersHorizontal size={22} />
+          <div className="leaderboard-actions">
+            <button
+              onClick={() => exportRatingsCsv(filteredRatings)}
+              disabled={!filteredRatings.length}
+              type="button"
+            >
+              <Download size={17} />
+              Export CSV
+            </button>
+            <SlidersHorizontal size={22} />
+          </div>
         </div>
 
         <div className="player-controls">
@@ -327,7 +404,47 @@ function App() {
   );
 }
 
-function AutobalancePanel({ preview, loading, error, onPreview }) {
+function SyncStatusBar({ status, autoRefresh, secondsUntilRefresh, lastRefreshAt }) {
+  const freshness = getSyncFreshness(status);
+  const result = status?.lastResult;
+
+  return (
+    <section className={`sync-status sync-${freshness}`} aria-live="polite">
+      <div className="sync-primary">
+        <span className="sync-indicator">
+          <Radio size={18} className={status?.running ? "pulse" : ""} />
+        </span>
+        <div>
+          <strong>{syncStatusLabel(status, freshness)}</strong>
+          <span>
+            {status?.lastSuccessAt
+              ? `Needy's updated ${formatRelativeTime(status.lastSuccessAt)}`
+              : "Waiting for first Needy's sync"}
+          </span>
+        </div>
+      </div>
+      <div className="sync-facts">
+        <span>{formatNumber(result?.matches)} matches</span>
+        <span>{formatNumber(result?.players)} players</span>
+        <span>
+          {autoRefresh ? `Dashboard refresh in ${secondsUntilRefresh}s` : "Dashboard refresh paused"}
+        </span>
+        {lastRefreshAt ? <span>Viewed {formatRelativeTime(lastRefreshAt)}</span> : null}
+      </div>
+    </section>
+  );
+}
+
+function AutobalancePanel({
+  preview,
+  loading,
+  error,
+  onPreview,
+  maxMoves,
+  onMaxMovesChange,
+  tolerance,
+  onToleranceChange,
+}) {
   const moves = preview?.moves || [];
   const current = preview?.current;
   const proposed = preview?.proposed;
@@ -362,6 +479,32 @@ function AutobalancePanel({ preview, loading, error, onPreview }) {
           </div>
         </div>
       ) : null}
+
+      <div className="balance-controls">
+        <label className="control-select">
+          <span>Move limit</span>
+          <select
+            value={maxMoves}
+            onChange={(event) => onMaxMovesChange(Number(event.target.value))}
+          >
+            {[2, 4, 6, 8].map((value) => (
+              <option key={value} value={value}>{value} players</option>
+            ))}
+          </select>
+        </label>
+        <label className="control-select">
+          <span>Fairness goal</span>
+          <select
+            value={tolerance}
+            onChange={(event) => onToleranceChange(Number(event.target.value))}
+          >
+            <option value={0.03}>47–53%</option>
+            <option value={0.05}>45–55%</option>
+            <option value={0.1}>40–60%</option>
+          </select>
+        </label>
+        <span className="control-help">Preview only · live teams remain untouched</span>
+      </div>
 
       {preview ? (
         <>
@@ -853,6 +996,75 @@ function formatDecimal(value, digits = 2) {
 
 function formatPercent(value) {
   return `${Math.round((Number(value) || 0) * 100)}%`;
+}
+
+function getSyncFreshness(status) {
+  if (status?.lastError) return "error";
+  if (status?.running) return "running";
+  if (!status?.lastSuccessAt) return "waiting";
+
+  const ageMs = Date.now() - new Date(status.lastSuccessAt).getTime();
+  const staleAfterMs = Math.max(60, Number(status.intervalSeconds) * 2.5) * 1000;
+  return ageMs <= staleAfterMs ? "fresh" : "stale";
+}
+
+function syncStatusLabel(status, freshness) {
+  if (freshness === "error") return "Needy's sync needs attention";
+  if (freshness === "running") return "Needy's sync in progress";
+  if (freshness === "fresh") return "Needy's data is live";
+  if (freshness === "stale") return "Needy's data is stale";
+  return status?.enabled === false ? "Needy's autosync is disabled" : "Connecting to Needy's sync";
+}
+
+function formatRelativeTime(value) {
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "at an unknown time";
+
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function exportRatingsCsv(players) {
+  const columns = [
+    ["Rank", (_, index) => index + 1],
+    ["Player", (player) => player.name],
+    ["FAB ID", (player) => player.fabid],
+    ["Source", (player) => sourceLabel(player.ratingSource)],
+    ["Rating", (player) => player.displayRating],
+    ["Matches", (player) => player.matches],
+    ["Win rate", (player) => player.winRate],
+    ["KD", (player) => player.kd],
+    ["Kills", (player) => player.kills],
+    ["Deaths", (player) => player.deaths],
+    ["Assists", (player) => player.assists],
+  ];
+  const lines = [
+    columns.map(([heading]) => escapeCsv(heading)).join(","),
+    ...players.map((player, index) =>
+      columns.map(([, valueFor]) => escapeCsv(valueFor(player, index))).join(","),
+    ),
+  ];
+  const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mordhau-player-ratings-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeCsv(value) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 createRoot(document.getElementById("root")).render(

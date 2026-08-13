@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime, timezone
+import time
+from threading import Lock
+from typing import Any
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from .config import AUTOSYNC_INTERVAL_SECONDS, AUTOSYNC_MATCH_LIMIT, AUTOSYNC_PLAYER_LIMIT
 from .needys_client import NeedysApiError, NeedysClient
 from .storage import (
     connect,
@@ -14,9 +22,75 @@ from .storage import (
     upsert_matches,
     upsert_players,
 )
+from .sync import sync_needys_stats
 
 
-app = FastAPI(title="Mordhau Data Service", version="0.1.0")
+sync_status: dict[str, Any] = {
+    "enabled": AUTOSYNC_INTERVAL_SECONDS > 0,
+    "intervalSeconds": AUTOSYNC_INTERVAL_SECONDS,
+    "matchLimit": AUTOSYNC_MATCH_LIMIT,
+    "playerLimit": AUTOSYNC_PLAYER_LIMIT,
+    "running": False,
+    "lastAttemptAt": None,
+    "lastSuccessAt": None,
+    "lastError": None,
+    "lastResult": None,
+}
+sync_lock = Lock()
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def run_incremental_sync() -> dict[str, int]:
+    with sync_lock:
+        with connect() as connection:
+            return sync_needys_stats(
+                NeedysClient(),
+                connection,
+                match_limit=AUTOSYNC_MATCH_LIMIT,
+                player_limit=AUTOSYNC_PLAYER_LIMIT,
+            )
+
+
+async def autosync_loop() -> None:
+    while True:
+        started = time.monotonic()
+        sync_status["running"] = True
+        sync_status["lastAttemptAt"] = utc_now()
+        try:
+            result = await asyncio.to_thread(run_incremental_sync)
+            sync_status["lastResult"] = result
+            sync_status["lastSuccessAt"] = utc_now()
+            sync_status["lastError"] = None
+        except Exception as exc:  # The worker must stay alive after transient upstream failures.
+            sync_status["lastError"] = str(exc) or exc.__class__.__name__
+        finally:
+            sync_status["running"] = False
+
+        elapsed = time.monotonic() - started
+        await asyncio.sleep(max(1.0, AUTOSYNC_INTERVAL_SECONDS - elapsed))
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    with connect() as connection:
+        init_db(connection)
+
+    task = None
+    if AUTOSYNC_INTERVAL_SECONDS > 0:
+        task = asyncio.create_task(autosync_loop())
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+
+app = FastAPI(title="Mordhau Data Service", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,15 +101,13 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def startup() -> None:
-    with connect() as connection:
-        init_db(connection)
-
-
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "data-service"}
+def health() -> dict[str, str | bool]:
+    return {
+        "status": "ok",
+        "service": "data-service",
+        "autosyncEnabled": bool(sync_status["enabled"]),
+    }
 
 
 @app.post("/ingest/history")
@@ -47,10 +119,11 @@ def ingest_history(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str
     except NeedysApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    with connect() as connection:
-        stored = upsert_matches(connection, matches)
-        players_stored = upsert_players(connection, players)
-        stats = database_stats(connection)
+    with sync_lock:
+        with connect() as connection:
+            stored = upsert_matches(connection, matches)
+            players_stored = upsert_players(connection, players)
+            stats = database_stats(connection)
 
     return {
         "fetched": len(matches),
@@ -69,9 +142,10 @@ def ingest_players(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str
     except NeedysApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    with connect() as connection:
-        stored = upsert_players(connection, players)
-        stats = database_stats(connection)
+    with sync_lock:
+        with connect() as connection:
+            stored = upsert_players(connection, players)
+            stats = database_stats(connection)
 
     return {"fetched": len(players), "stored": stored, **stats}
 
@@ -85,8 +159,9 @@ def current_scoreboard(save_snapshot: bool = True) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if save_snapshot:
-        with connect() as connection:
-            save_scoreboard_snapshot(connection, payload)
+        with sync_lock:
+            with connect() as connection:
+                save_scoreboard_snapshot(connection, payload)
 
     return payload
 
@@ -119,3 +194,8 @@ def all_players(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
 def stats() -> dict[str, int]:
     with connect() as connection:
         return database_stats(connection)
+
+
+@app.get("/stats/sync")
+def stats_sync() -> dict[str, Any]:
+    return dict(sync_status)

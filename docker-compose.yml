@@ -4,6 +4,9 @@ services:
       context: ./services/data-service
     environment:
       MPU_DATA_DIR: /data
+      MPU_AUTOSYNC_INTERVAL_SECONDS: "30"
+      MPU_AUTOSYNC_MATCH_LIMIT: "100"
+      MPU_AUTOSYNC_PLAYER_LIMIT: "200"
     ports:
       - "8001:8001"
     volumes:
@@ -37,6 +40,7 @@ services:
       context: ./apps/dashboard
     environment:
       VITE_API_BASE_URL: http://localhost:8002
+      VITE_DATA_API_BASE_URL: http://localhost:8001
       VITE_AUTOBALANCE_API_BASE_URL: http://localhost:8003
     ports:
       - "5173:5173"

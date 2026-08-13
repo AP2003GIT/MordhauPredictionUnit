@@ -22,8 +22,10 @@ function Find-BasePython {
     $codexPython = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 
     $candidates = @(
-        @{ Exe = "python"; Args = @() },
+        @{ Exe = "py"; Args = @("-3.12") },
+        @{ Exe = "py"; Args = @("-3.13") },
         @{ Exe = "py"; Args = @("-3") },
+        @{ Exe = "python"; Args = @() },
         @{ Exe = $codexPython; Args = @() }
     )
 
@@ -130,6 +132,17 @@ function Ensure-Dashboard {
     }
 }
 
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+
+    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId" -ErrorAction SilentlyContinue
+    foreach ($child in $children) {
+        Stop-ProcessTree -ProcessId ([int]$child.ProcessId)
+    }
+
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
 function Stop-PidFile {
     param([string]$Name)
 
@@ -138,11 +151,28 @@ function Stop-PidFile {
         return
     }
 
-    $processId = [int](Get-Content $pidPath -Raw)
+    [string]$rawProcessId = Get-Content $pidPath -Raw
+    $processId = 0
+    if (
+        [string]::IsNullOrWhiteSpace($rawProcessId) -or
+        -not [int]::TryParse($rawProcessId.Trim(), [ref]$processId) -or
+        $processId -le 0
+    ) {
+        Write-Step "Removing stale $Name PID file"
+        Remove-Item $pidPath -Force -ErrorAction SilentlyContinue
+        return
+    }
+
     $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
     if ($process) {
-        Write-Step "Stopping previous $Name process"
-        Stop-Process -Id $processId -Force
+        $details = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
+        $commandLine = [string]$details.CommandLine
+        if ($commandLine -and $commandLine.Contains([string]$Root, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Step "Stopping previous $Name process tree"
+            Stop-ProcessTree -ProcessId $processId
+        } else {
+            Write-Warning "Ignoring stale $Name PID $processId because it does not belong to this project."
+        }
     }
     Remove-Item $pidPath -Force -ErrorAction SilentlyContinue
 }

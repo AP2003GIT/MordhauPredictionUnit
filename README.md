@@ -113,6 +113,11 @@ Data service on `:8001`:
 - `GET /matches/recent?limit=20`
 - `GET /players/all?limit=20000`
 - `GET /stats/database`
+- `GET /stats/sync`
+
+The data service automatically refreshes the 100 most recent matches and 200 most-active
+players every 30 seconds. Configure the worker with `MPU_AUTOSYNC_INTERVAL_SECONDS`,
+`MPU_AUTOSYNC_MATCH_LIMIT`, and `MPU_AUTOSYNC_PLAYER_LIMIT`; set the interval to `0` to disable it.
 
 Prediction service on `:8002`:
 
@@ -122,14 +127,22 @@ Prediction service on `:8002`:
 - `GET /predict/random?team_size=5`
 - `GET /ratings?limit=20000`
 - `GET /matches/recent?limit=20`
+- `POST /model/train`
+- `GET /model/status`
 
 Autobalance service on `:8003`:
 
 - `GET /health`
 - `POST /balance/preview`
 - `POST /balance/apply` (intentionally disabled during the dry-run milestone)
-- `POST /model/train`
-- `GET /model/status`
+
+Dashboard quality-of-life controls:
+
+- live Needy's sync freshness, record totals, and next-refresh countdown
+- pause/resume for the 30-second dashboard refresh (the preference is remembered)
+- partial refresh handling so one unavailable service does not hide healthy data
+- configurable dry-run move limit and fairness target
+- CSV export for the currently filtered and sorted player list
 
 ## Verification
 

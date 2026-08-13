@@ -59,6 +59,7 @@ select {
 .simulation-panel,
 .autobalance-panel,
 .leaderboard,
+.sync-status,
 .empty-state {
   border: 1px solid #323b45;
   background: rgba(25, 29, 34, 0.92);
@@ -107,6 +108,12 @@ h2 {
   justify-content: flex-end;
 }
 
+.toggle-button.is-active {
+  border-color: #3f746b;
+  background: #19312b;
+  color: #a8eee0;
+}
+
 .status {
   margin-top: 16px;
   border-radius: 8px;
@@ -118,6 +125,78 @@ h2 {
   border: 1px solid #af4b55;
   background: #351c21;
   color: #ffd9dc;
+}
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  border-radius: 8px;
+  padding: 13px 16px;
+}
+
+.sync-primary,
+.sync-facts {
+  display: flex;
+  align-items: center;
+}
+
+.sync-primary {
+  gap: 11px;
+  min-width: 230px;
+}
+
+.sync-primary > div {
+  display: grid;
+  gap: 2px;
+}
+
+.sync-primary span,
+.sync-facts span {
+  color: #9eafbf;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.sync-indicator {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #253039;
+}
+
+.sync-facts {
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sync-facts span {
+  border: 1px solid #34404a;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #171c21;
+}
+
+.sync-fresh .sync-indicator,
+.sync-running .sync-indicator {
+  background: #173128;
+  color: #77dfbf;
+}
+
+.sync-stale .sync-indicator,
+.sync-waiting .sync-indicator {
+  background: #332d1d;
+  color: #e0bd76;
+}
+
+.sync-error .sync-indicator {
+  background: #3a2025;
+  color: #ff9ea7;
 }
 
 .prediction-band {
@@ -546,6 +625,22 @@ h2 {
   color: #9cabb9;
 }
 
+.balance-controls {
+  display: grid;
+  grid-template-columns: 190px 190px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #2a333c;
+  padding-top: 14px;
+}
+
+.control-help {
+  color: #8fa0af;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: right;
+}
+
 .balance-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -612,6 +707,16 @@ h2 {
 .player-browser-heading svg {
   flex: 0 0 auto;
   color: #8dd6d1;
+}
+
+.leaderboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.leaderboard-actions button {
+  min-height: 36px;
 }
 
 .player-controls {
@@ -898,9 +1003,20 @@ h2 {
   animation: spin 0.8s linear infinite;
 }
 
+.pulse {
+  animation: pulse 1.25s ease-in-out infinite;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.9);
   }
 }
 
@@ -911,7 +1027,8 @@ h2 {
   }
 
   .topbar,
-  .prediction-band {
+  .prediction-band,
+  .sync-status {
     align-items: stretch;
     flex-direction: column;
   }
@@ -943,6 +1060,27 @@ h2 {
   .autobalance-panel .section-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .sync-facts {
+    justify-content: flex-start;
+  }
+
+  .balance-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .control-help {
+    text-align: left;
+  }
+
+  .player-browser-heading {
+    align-items: flex-start;
+  }
+
+  .leaderboard-actions {
+    align-items: flex-end;
+    flex-direction: column-reverse;
   }
 
   .balance-comparison {

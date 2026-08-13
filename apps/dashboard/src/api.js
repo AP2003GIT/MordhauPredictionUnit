@@ -1,4 +1,6 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8002";
+const DATA_API_BASE_URL =
+  import.meta.env.VITE_DATA_API_BASE_URL || "http://localhost:8001";
 const AUTOBALANCE_API_BASE_URL =
   import.meta.env.VITE_AUTOBALANCE_API_BASE_URL || "http://localhost:8003";
 export const ALL_PLAYERS_LIMIT = 20000;
@@ -26,6 +28,10 @@ export function fetchRandomPrediction(teamSize = 5) {
 
 export function fetchModelStatus() {
   return request("/model/status");
+}
+
+export function fetchSyncStatus() {
+  return requestFrom(DATA_API_BASE_URL, "/stats/sync");
 }
 
 export function trainModel() {

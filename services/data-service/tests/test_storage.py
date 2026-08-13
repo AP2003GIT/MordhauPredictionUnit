@@ -4,6 +4,7 @@ import sqlite3
 import unittest
 
 from app.storage import database_stats, init_db, load_history_matches, upsert_matches
+from app.sync import sync_needys_stats
 
 
 def make_match(players: list[dict]) -> dict:
@@ -57,3 +58,31 @@ class StorageTests(unittest.TestCase):
             ("match-1",),
         ).fetchall()
         self.assertEqual([row["fabid"] for row in rows], ["iron"])
+
+    def test_incremental_sync_uses_bounded_limits_and_upserts(self) -> None:
+        class FakeClient:
+            def __init__(self) -> None:
+                self.match_limit = 0
+                self.player_limit = 0
+
+            def recent_matches(self, limit: int) -> list[dict]:
+                self.match_limit = limit
+                return [make_match([{"fabid": "iron", "team": 0}])]
+
+            def most_active_players(self, limit: int) -> list[dict]:
+                self.player_limit = limit
+                return [{"fabid": "iron", "steamUsername": "Iron", "matchesPlayed": 1}]
+
+        client = FakeClient()
+
+        result = sync_needys_stats(
+            client,
+            self.connection,
+            match_limit=100,
+            player_limit=200,
+        )
+
+        self.assertEqual(client.match_limit, 100)
+        self.assertEqual(client.player_limit, 200)
+        self.assertEqual(result["matches"], 1)
+        self.assertEqual(result["players"], 1)

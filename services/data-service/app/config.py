@@ -9,3 +9,15 @@ DATA_DIR = Path(os.getenv("MPU_DATA_DIR", BASE_DIR / "data"))
 DATABASE_PATH = Path(os.getenv("MPU_DATABASE_PATH", DATA_DIR / "mordhau_prediction.sqlite3"))
 
 NEEDYS_BASE_URL = os.getenv("NEEDYS_BASE_URL", "https://www.needys-community.com")
+
+
+def positive_int_from_env(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+AUTOSYNC_INTERVAL_SECONDS = positive_int_from_env("MPU_AUTOSYNC_INTERVAL_SECONDS", 30)
+AUTOSYNC_MATCH_LIMIT = positive_int_from_env("MPU_AUTOSYNC_MATCH_LIMIT", 100)
+AUTOSYNC_PLAYER_LIMIT = positive_int_from_env("MPU_AUTOSYNC_PLAYER_LIMIT", 200)
