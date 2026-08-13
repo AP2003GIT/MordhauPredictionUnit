@@ -6,7 +6,8 @@ import math
 import random
 from typing import Any
 
-from .config import MODEL_PATH
+from .activity import active_skm_player_counts, skm_matches
+from .config import ACTIVE_SKM_MIN_MATCHES, ACTIVE_SKM_WINDOW_DAYS, MODEL_PATH
 from .data_client import DataServiceClient, DataServiceError
 from .ml_features import (
     build_team_feature_differences,
@@ -78,6 +79,11 @@ def ratings(limit: int = Query(default=20000, ge=1, le=20000)) -> dict:
         "players": returned_players,
         "count": len(sorted_players),
         "returned": len(returned_players),
+        "activityRule": {
+            "gamemode": "Skirmish",
+            "windowDays": ACTIVE_SKM_WINDOW_DAYS,
+            "minimumMatches": ACTIVE_SKM_MIN_MATCHES,
+        },
     }
 
 
@@ -138,20 +144,31 @@ def recent_matches(limit: int = Query(default=20, ge=1, le=500)) -> dict:
 
 
 def load_player_catalog() -> list[dict]:
-    history = {"matches": load_history_matches(20000)}
+    matches = load_history_matches(20000)
+    skirmish_history = skm_matches(matches)
     client = DataServiceClient()
     try:
         known_players = client.get_json("/players/all", {"limit": 20000})
     except DataServiceError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    matches = history.get("matches", [])
-    player_ratings = build_player_ratings(matches if isinstance(matches, list) else [])
+    player_ratings = build_player_ratings(skirmish_history)
+    active_counts = active_skm_player_counts(
+        skirmish_history,
+        window_days=ACTIVE_SKM_WINDOW_DAYS,
+        min_matches=ACTIVE_SKM_MIN_MATCHES,
+    )
     players = merge_player_ratings(
         player_ratings,
         known_players.get("players", []) if isinstance(known_players, dict) else [],
     )
-    return players
+    active_players = []
+    for player in players:
+        fabid = str(player.get("fabid") or "").strip()
+        if fabid not in active_counts:
+            continue
+        active_players.append({**player, "activeSkmMatches": active_counts[fabid]})
+    return active_players
 
 
 def load_history_matches(limit: int) -> list[dict]:

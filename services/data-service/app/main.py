@@ -10,14 +10,22 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import AUTOSYNC_INTERVAL_SECONDS, AUTOSYNC_MATCH_LIMIT, AUTOSYNC_PLAYER_LIMIT
+from .config import (
+    ACTIVE_SKM_MIN_MATCHES,
+    ACTIVE_SKM_WINDOW_DAYS,
+    AUTOSYNC_INTERVAL_SECONDS,
+    AUTOSYNC_MATCH_LIMIT,
+    AUTOSYNC_PLAYER_LIMIT,
+)
 from .needys_client import NeedysApiError, NeedysClient
 from .storage import (
     connect,
     database_stats,
     init_db,
+    load_active_skm_player_counts,
     load_history_matches,
     load_players,
+    prune_players,
     save_scoreboard_snapshot,
     upsert_matches,
     upsert_players,
@@ -30,6 +38,8 @@ sync_status: dict[str, Any] = {
     "intervalSeconds": AUTOSYNC_INTERVAL_SECONDS,
     "matchLimit": AUTOSYNC_MATCH_LIMIT,
     "playerLimit": AUTOSYNC_PLAYER_LIMIT,
+    "activeSkmWindowDays": ACTIVE_SKM_WINDOW_DAYS,
+    "activeSkmMinimumMatches": ACTIVE_SKM_MIN_MATCHES,
     "running": False,
     "lastAttemptAt": None,
     "lastSuccessAt": None,
@@ -51,6 +61,8 @@ def run_incremental_sync() -> dict[str, int]:
                 connection,
                 match_limit=AUTOSYNC_MATCH_LIMIT,
                 player_limit=AUTOSYNC_PLAYER_LIMIT,
+                active_window_days=ACTIVE_SKM_WINDOW_DAYS,
+                active_min_matches=ACTIVE_SKM_MIN_MATCHES,
             )
 
 
@@ -114,23 +126,27 @@ def health() -> dict[str, str | bool]:
 def ingest_history(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str, int]:
     client = NeedysClient()
     try:
-        matches = client.recent_matches(limit=limit)
-        players = client.most_active_players(limit=limit)
+        with sync_lock:
+            with connect() as connection:
+                result = sync_needys_stats(
+                    client,
+                    connection,
+                    match_limit=limit,
+                    player_limit=limit,
+                    active_window_days=ACTIVE_SKM_WINDOW_DAYS,
+                    active_min_matches=ACTIVE_SKM_MIN_MATCHES,
+                )
     except NeedysApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    with sync_lock:
-        with connect() as connection:
-            stored = upsert_matches(connection, matches)
-            players_stored = upsert_players(connection, players)
-            stats = database_stats(connection)
-
     return {
-        "fetched": len(matches),
-        "stored": stored,
-        "playersFetched": len(players),
-        "playersStored": players_stored,
-        **stats,
+        "fetched": result["matchesFetched"],
+        "stored": result["matchesStored"],
+        **{
+            key: value
+            for key, value in result.items()
+            if key not in {"matchesFetched", "matchesStored"}
+        },
     }
 
 
@@ -144,10 +160,28 @@ def ingest_players(limit: int = Query(default=9999, ge=1, le=20000)) -> dict[str
 
     with sync_lock:
         with connect() as connection:
-            stored = upsert_players(connection, players)
+            active_counts = load_active_skm_player_counts(
+                connection,
+                window_days=ACTIVE_SKM_WINDOW_DAYS,
+                min_matches=ACTIVE_SKM_MIN_MATCHES,
+            )
+            eligible = [
+                player
+                for player in players
+                if str(player.get("fabid") or "").strip() in active_counts
+            ]
+            stored = upsert_players(connection, eligible)
+            pruned = prune_players(connection, active_counts)
             stats = database_stats(connection)
 
-    return {"fetched": len(players), "stored": stored, **stats}
+    return {
+        "fetched": len(players),
+        "eligible": len(eligible),
+        "stored": stored,
+        "pruned": pruned,
+        "activeSkmPlayers": len(active_counts),
+        **stats,
+    }
 
 
 @app.get("/scoreboard/current")

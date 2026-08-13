@@ -18,6 +18,12 @@ def positive_int_from_env(name: str, default: int) -> int:
         return default
 
 
+def at_least_one_int_from_env(name: str, default: int) -> int:
+    return max(1, positive_int_from_env(name, default))
+
+
 AUTOSYNC_INTERVAL_SECONDS = positive_int_from_env("MPU_AUTOSYNC_INTERVAL_SECONDS", 30)
 AUTOSYNC_MATCH_LIMIT = positive_int_from_env("MPU_AUTOSYNC_MATCH_LIMIT", 100)
 AUTOSYNC_PLAYER_LIMIT = positive_int_from_env("MPU_AUTOSYNC_PLAYER_LIMIT", 200)
+ACTIVE_SKM_WINDOW_DAYS = at_least_one_int_from_env("MPU_ACTIVE_SKM_WINDOW_DAYS", 30)
+ACTIVE_SKM_MIN_MATCHES = at_least_one_int_from_env("MPU_ACTIVE_SKM_MIN_MATCHES", 5)

@@ -7,6 +7,8 @@ services:
       MPU_AUTOSYNC_INTERVAL_SECONDS: "30"
       MPU_AUTOSYNC_MATCH_LIMIT: "100"
       MPU_AUTOSYNC_PLAYER_LIMIT: "200"
+      MPU_ACTIVE_SKM_WINDOW_DAYS: "30"
+      MPU_ACTIVE_SKM_MIN_MATCHES: "5"
     ports:
       - "8001:8001"
     volumes:
@@ -17,6 +19,8 @@ services:
       context: ./services/prediction-service
     environment:
       DATA_SERVICE_URL: http://data-service:8001
+      MPU_ACTIVE_SKM_WINDOW_DAYS: "30"
+      MPU_ACTIVE_SKM_MIN_MATCHES: "5"
     ports:
       - "8002:8002"
     depends_on:

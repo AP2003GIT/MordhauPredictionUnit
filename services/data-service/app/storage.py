@@ -261,6 +261,59 @@ def upsert_players(connection: sqlite3.Connection, players: Iterable[dict[str, A
     return inserted_or_updated
 
 
+def load_active_skm_player_counts(
+    connection: sqlite3.Connection,
+    *,
+    window_days: int = 30,
+    min_matches: int = 5,
+) -> dict[str, int]:
+    init_db(connection)
+    newest = connection.execute(
+        """
+        SELECT MAX(datetime(match_date)) AS newest
+        FROM matches
+        WHERE lower(gamemode) IN ('skirmish', 'skm')
+        """
+    ).fetchone()["newest"]
+    if not newest:
+        return {}
+
+    rows = connection.execute(
+        """
+        SELECT pm.fabid, COUNT(DISTINCT pm.match_key) AS match_count
+        FROM player_matches AS pm
+        JOIN matches AS m ON m.match_key = pm.match_key
+        WHERE lower(m.gamemode) IN ('skirmish', 'skm')
+          AND datetime(m.match_date) >= datetime(?, ?)
+        GROUP BY pm.fabid
+        HAVING COUNT(DISTINCT pm.match_key) >= ?
+        """,
+        (newest, f"-{max(1, window_days)} days", max(1, min_matches)),
+    ).fetchall()
+    return {str(row["fabid"]): int(row["match_count"]) for row in rows}
+
+
+def prune_players(connection: sqlite3.Connection, keep_fabids: Iterable[str]) -> int:
+    init_db(connection)
+    keep = sorted(
+        {
+            str(fabid).strip()
+            for fabid in keep_fabids
+            if fabid is not None and str(fabid).strip()
+        }
+    )
+    if keep:
+        placeholders = ",".join("?" for _ in keep)
+        cursor = connection.execute(
+            f"DELETE FROM players WHERE fabid NOT IN ({placeholders})",
+            keep,
+        )
+    else:
+        cursor = connection.execute("DELETE FROM players")
+    connection.commit()
+    return max(0, int(cursor.rowcount))
+
+
 def load_history_matches(
     connection: sqlite3.Connection,
     limit: int = 9999,

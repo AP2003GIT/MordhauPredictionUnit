@@ -119,6 +119,11 @@ The data service automatically refreshes the 100 most recent matches and 200 mos
 players every 30 seconds. Configure the worker with `MPU_AUTOSYNC_INTERVAL_SECONDS`,
 `MPU_AUTOSYNC_MATCH_LIMIT`, and `MPU_AUTOSYNC_PLAYER_LIMIT`; set the interval to `0` to disable it.
 
+The player catalog is restricted to SKM regulars: at least 5 Skirmish appearances during the
+30 days preceding the newest stored match. Match history remains intact for model training, while
+inactive and aggregate-only rows are removed from the player table. Configure this with
+`MPU_ACTIVE_SKM_MIN_MATCHES` and `MPU_ACTIVE_SKM_WINDOW_DAYS`.
+
 Prediction service on `:8002`:
 
 - `GET /health`

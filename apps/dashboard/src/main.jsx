@@ -31,9 +31,8 @@ import {
 import "./styles.css";
 
 const SOURCE_FILTERS = [
-  { value: "all", label: "All sources" },
+  { value: "all", label: "All active SKM" },
   { value: "match-history", label: "Match history" },
-  { value: "aggregate-stats", label: "Aggregate stats" },
 ];
 
 const SORT_OPTIONS = [
@@ -50,6 +49,7 @@ const AUTO_REFRESH_STORAGE_KEY = "mpu-auto-refresh";
 function App() {
   const [prediction, setPrediction] = useState(null);
   const [ratings, setRatings] = useState([]);
+  const [ratingActivityRule, setRatingActivityRule] = useState(null);
   const [loading, setLoading] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [randomLoading, setRandomLoading] = useState(false);
@@ -78,7 +78,14 @@ function App() {
     setError("");
     const requests = [
       ["prediction", fetchPrediction(), setPrediction],
-      ["ratings", fetchRatings(), (payload) => setRatings(payload.players || [])],
+      [
+        "ratings",
+        fetchRatings(),
+        (payload) => {
+          setRatings(payload.players || []);
+          setRatingActivityRule(payload.activityRule || null);
+        },
+      ],
       ["model", fetchModelStatus(), setModelStatus],
       ["sync status", fetchSyncStatus(), setSyncStatus],
     ];
@@ -313,9 +320,12 @@ function App() {
       <section className="leaderboard">
         <div className="section-heading player-browser-heading">
           <div>
-            <h2>All player ratings</h2>
+            <h2>Most active SKM players</h2>
             <span>
               {filteredRatings.length} of {ratings.length} players shown
+              {ratingActivityRule
+                ? ` · ${ratingActivityRule.minimumMatches}+ matches in ${ratingActivityRule.windowDays} days`
+                : ""}
             </span>
           </div>
           <div className="leaderboard-actions">
@@ -385,7 +395,7 @@ function App() {
                   <small>{sourceLabel(player.ratingSource)}</small>
                 </span>
                 <span>{formatNumber(player.displayRating)}</span>
-                <span>{formatNumber(player.matches)} matches</span>
+                <span>{formatNumber(player.activeSkmMatches)} recent SKM</span>
                 <span>{formatDecimal(player.kd)} KD</span>
               </button>
             ))}
@@ -859,7 +869,7 @@ function PlayerDetail({ player }) {
       </div>
 
       <div className="detail-grid">
-        <StatTile label="Matches" value={formatNumber(player.matches)} />
+        <StatTile label="30d SKM" value={formatNumber(player.activeSkmMatches)} />
         <StatTile label="Wins" value={formatNumber(player.wins)} />
         <StatTile label="Win rate" value={formatPercent(player.winRate || 0)} />
         <StatTile label="KD" value={formatDecimal(player.kd)} />
